@@ -1,14 +1,15 @@
 #![allow(dead_code, unused_variables)]
-use std::{borrow::Borrow, io::Read, string};
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use std::collections::HashMap;
+
+use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{
     parser::{
-        expression::{Expression, Precedence},
+        expression::{Expression, Precedence, Statement, VarDeclaration},
         ParseError, Parser,
     },
-    token::{self, Token},
+    token::Token,
 };
 
 #[derive(Clone)]
@@ -44,8 +45,26 @@ impl std::fmt::Display for Object {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct Environment {
+    values: HashMap<Bytes, Object>,
+}
+
+impl Environment {
+    pub(crate) fn add(&mut self, key: Bytes, val: Object) -> Option<Object> {
+        self.values.insert(key, val)
+    }
+
+    pub(crate) fn get<K: AsRef<[u8]>>(&self, key: K) -> Object {
+        self.values
+            .get(key.as_ref())
+            .map_or(Object::Nil, |v| v.clone())
+    }
+}
+
 pub(crate) struct Interpreter {
     parser: Parser,
+    env: Environment,
 }
 
 pub(crate) enum EvaluationError {
@@ -85,7 +104,11 @@ impl std::fmt::Debug for EvaluationError {
 impl Interpreter {
     pub(crate) fn from_source(source: String) -> Result<Self, ParseError> {
         let parser = Parser::from_source(source)?;
-        Ok(Self { parser })
+
+        Ok(Self {
+            parser,
+            env: Environment::default(),
+        })
     }
 
     fn evaluate_string_infix_operation(
@@ -224,19 +247,16 @@ impl Interpreter {
 
     fn evaluate_expression(&mut self, expression: &Expression) -> Result<Object, EvaluationError> {
         let val = match expression {
-            crate::parser::expression::Expression::NilLiteral => Object::Nil,
-            crate::parser::expression::Expression::BooleanLiteral(v) => Object::Boolean(*v),
-            crate::parser::expression::Expression::NumberLiteral(v) => Object::Number(*v),
-            crate::parser::expression::Expression::StringLiteral(bytes) => {
-                Object::String(bytes.clone())
-            }
-            crate::parser::expression::Expression::GroupedExpression(expr) => {
-                self.evaluate_expression(expr.as_ref())?
-            }
-            crate::parser::expression::Expression::PrefixExpression { operator, expr } => {
+            Expression::NilLiteral => Object::Nil,
+            Expression::Ident(ident_bytes) => self.env.get(ident_bytes),
+            Expression::BooleanLiteral(v) => Object::Boolean(*v),
+            Expression::NumberLiteral(v) => Object::Number(*v),
+            Expression::StringLiteral(bytes) => Object::String(bytes.clone()),
+            Expression::GroupedExpression(expr) => self.evaluate_expression(expr.as_ref())?,
+            Expression::PrefixExpression { operator, expr } => {
                 self.evaluate_prefix_expression(operator.clone(), expr.as_ref())?
             }
-            crate::parser::expression::Expression::InfixExpression {
+            Expression::InfixExpression {
                 operator,
                 left_expr,
                 right_expr,
@@ -256,5 +276,34 @@ impl Interpreter {
             .or_else(|e| Err(EvaluationError::ParseError(e)))?;
 
         self.evaluate_expression(&expression)
+    }
+
+    pub(crate) fn evaluate_program(&mut self) -> Result<(), EvaluationError> {
+        let statements = self
+            .parser
+            .parse_program()
+            .or_else(|e| Err(EvaluationError::ParseError(e)))?;
+        eprintln!("parsed statements successfully");
+
+        for stmt in statements.iter() {
+            match stmt {
+                Statement::Expression(e) => {
+                    let _ = self.evaluate_expression(e);
+                }
+                Statement::Print(e) => {
+                    let val = self.evaluate_expression(e)?;
+                    println!("{}", val);
+                }
+                Statement::VarDeclaration(VarDeclaration { identifier, expr }) => {
+                    if let Some(expr) = expr {
+                        let val = self.evaluate_expression(expr)?;
+                        self.env.add(identifier.clone(), val);
+                    } else {
+                        self.env.add(identifier.clone(), Object::Nil);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }

@@ -93,6 +93,41 @@ fn main() {
                 }
             }
         }
+        "parse-program" => {
+            let source = read_contents();
+            let mut parser = match Parser::from_source(source) {
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    std::process::exit(1);
+                }
+                Ok(parser) => parser,
+            };
+            let program = match parser.parse_program() {
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    std::process::exit(1);
+                }
+                Ok(program) => program,
+            };
+
+            for statement in program.iter() {
+                println!("{:?}", statement);
+            }
+        }
+        "evaluate-program" => {
+            let source = read_contents();
+            let mut interpreter = match Interpreter::from_source(source) {
+                Ok(i) => i,
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(e) = interpreter.evaluate_program() {
+                eprintln!("{:?}", e);
+                std::process::exit(1);
+            }
+        }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
             return;

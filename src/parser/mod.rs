@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use expression::{Expression, Precedence};
+use expression::{Expression, Precedence, Statement, VarDeclaration};
 
 use crate::token::{LexicalError, Scanner, Token, TokenIterator};
 pub(crate) mod expression;
@@ -80,7 +80,7 @@ impl Parser {
             true
         };
         std::mem::swap(&mut self.curr_token, &mut self.peek_token);
-        eprintln!(">>advance_token called: curr_token: {:?}", self.curr_token);
+        // eprintln!(">>advance_token called: curr_token: {:?}", self.curr_token);
         if should_forward_peek_token {
             // TODO: remove unwraps
             self.peek_token = self._token_iterator.next().unwrap().unwrap();
@@ -120,14 +120,8 @@ impl Parser {
         left_expr: Expression,
     ) -> ParseResult<Expression> {
         let operator = self.curr_token.clone();
-        eprintln!(
-            "inside parse_infix_operator_expression, left_expr: {:?}, operator: {:?}",
-            left_expr, operator
-        );
         self.advance_token();
-        eprintln!("...token advanced in parse_infix_operator_expression");
         let right_expr = self.parse_expression(operator.get_precedence())?;
-        // self.advance_token();
         Ok(Expression::InfixExpression {
             operator: operator,
             left_expr: Box::new(left_expr),
@@ -147,13 +141,14 @@ impl Parser {
             Token::StringLiteral(bytes) => Expression::StringLiteral(bytes.clone()),
             Token::LParen => self.parse_prefix_grouped_expression()?,
             Token::MINUS | Token::BANG => self.parse_prefix_operator_expression()?,
+            Token::Identifier(ident_bytes) => Expression::Ident(ident_bytes.clone()),
             Token::Nil => {
                 self.advance_token();
                 Expression::NilLiteral
             }
             t => {
                 return Err(ParseError::ExpectedTokenNotFound {
-                    expected: "expression",
+                    expected: "expression....",
                     got: t,
                     line: self._token_iterator.get_curr_line(),
                 })
@@ -161,13 +156,13 @@ impl Parser {
         };
 
         loop {
-            eprintln!(
-                "curr_token: {curr_token}, precendence: {precendence}",
-                curr_token = self.curr_token,
-                precendence = self.curr_token.get_precedence().value()
-            );
+            // eprintln!(
+            //     "curr_token: {curr_token}, precendence: {precendence}",
+            //     curr_token = self.curr_token,
+            //     precendence = self.curr_token.get_precedence().value()
+            // );
             if let Token::EOF = self.peek_token {
-                eprintln!("&&&&&&&&&&&&& found EOF");
+                // eprintln!("&&&&&&&&&&&&& found EOF");
                 break;
             }
             if precendence.value() >= self.peek_token.get_precedence().value() {
@@ -193,5 +188,95 @@ impl Parser {
         }
 
         Ok(left_expr)
+    }
+
+    fn ensure_semicolon_at_statement_end(&mut self) -> Result<(), ParseError> {
+        match &self.peek_token {
+            Token::SEMICOLON => {
+                self.advance_token();
+                Ok(())
+            }
+            _ => {
+                return Err(ParseError::ExpectedTokenNotFound {
+                    expected: ";",
+                    got: self.peek_token.clone(),
+                    line: self.get_curr_line(),
+                });
+            }
+        }
+    }
+
+    fn parse_var_declaration(&mut self) -> Result<Statement, ParseError> {
+        self.advance_token();
+        let ident_bytes = match self.curr_token.clone() {
+            Token::Identifier(iden_bytes) => iden_bytes,
+            token => {
+                return Err(ParseError::ExpectedTokenNotFound {
+                    expected: "Identifier",
+                    got: token,
+                    line: self.get_curr_line(),
+                })
+            }
+        };
+        eprintln!(
+            "found ident_bytes in var dev: {}, peek_token: {}",
+            unsafe { std::str::from_utf8_unchecked(ident_bytes.as_ref()) },
+            self.peek_token
+        );
+        match self.peek_token.clone() {
+            Token::SEMICOLON => Ok(Statement::VarDeclaration(VarDeclaration {
+                identifier: ident_bytes,
+                expr: None,
+            })),
+            Token::EQUAL => {
+                self.advance_token();
+                eprintln!(
+                    "found ====, curr_token before advanceing: {}",
+                    self.curr_token
+                );
+                self.advance_token();
+                eprintln!("curr_token after advanceing: {}", self.curr_token);
+                let expr = self.parse_expression(Precedence::Lowest)?;
+                Ok(Statement::VarDeclaration(VarDeclaration {
+                    identifier: ident_bytes,
+                    expr: Some(expr),
+                }))
+            }
+            token => Err(ParseError::ExpectedTokenNotFound {
+                expected: "expression",
+                got: token,
+                line: self.get_curr_line(),
+            }),
+        }
+    }
+
+    pub(crate) fn parse_program(&mut self) -> Result<Vec<Statement>, ParseError> {
+        let mut statements = vec![];
+        loop {
+            if let Token::EOF = self.curr_token {
+                break;
+            }
+            match &self.curr_token {
+                Token::Print => {
+                    self.advance_token();
+                    let expr = self.parse_expression(Precedence::Lowest)?;
+                    statements.push(Statement::Print(expr));
+                }
+                Token::Var => {
+                    let dec = self.parse_var_declaration()?;
+                    eprintln!("var dec: {:?}", dec);
+                    statements.push(dec);
+                }
+                _ => {
+                    let expr = self.parse_expression(Precedence::Lowest)?;
+                    statements.push(Statement::Expression(expr));
+                }
+            }
+            self.ensure_semicolon_at_statement_end()?;
+            eprintln!("%%%% before advancing: curr_token: {}", self.curr_token);
+            self.advance_token();
+            eprintln!("%%%% after advancing: curr_token: {}", self.curr_token);
+        }
+        Ok(statements)
     }
 }

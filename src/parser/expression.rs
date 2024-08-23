@@ -7,6 +7,7 @@ pub(crate) enum Expression {
     BooleanLiteral(bool),
     NumberLiteral(f64),
     StringLiteral(Bytes),
+    Ident(Bytes),
     GroupedExpression(Box<Expression>),
     PrefixExpression {
         operator: Token,
@@ -38,6 +39,9 @@ impl std::fmt::Debug for Expression {
                 left_expr,
                 right_expr,
             } => write!(f, "({operator} {:?} {:?})", left_expr, right_expr),
+            Expression::Ident(ident_bytes) => write!(f, "ident: {}", unsafe {
+                std::str::from_utf8_unchecked(ident_bytes.as_ref())
+            }),
         }
     }
 }
@@ -56,5 +60,32 @@ pub(crate) enum Precedence {
 impl Precedence {
     pub(crate) fn value(&self) -> u8 {
         self.clone() as u8
+    }
+}
+
+pub(crate) struct VarDeclaration {
+    pub(crate) identifier: Bytes,
+    pub(crate) expr: Option<Expression>,
+}
+
+pub(crate) enum Statement {
+    Expression(Expression),
+    Print(Expression),
+    VarDeclaration(VarDeclaration),
+}
+
+impl std::fmt::Debug for Statement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Statement::Expression(e) => write!(f, "{:?};", e),
+            Statement::Print(e) => write!(f, "print {:?};", e),
+            Statement::VarDeclaration(VarDeclaration { identifier, expr }) => {
+                let identifier = unsafe { std::str::from_utf8_unchecked(identifier.as_ref()) };
+                match expr {
+                    Some(expr) => write!(f, "var {} = {:?};", identifier, expr),
+                    None => write!(f, "var {};", identifier),
+                }
+            }
+        }
     }
 }
