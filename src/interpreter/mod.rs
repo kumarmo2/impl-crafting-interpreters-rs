@@ -6,7 +6,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{
     parser::{
-        expression::{Expression, Precedence, Statement, VarDeclaration},
+        expression::{Assignment, Expression, Precedence, Statement, VarDeclaration},
         ParseError, Parser,
     },
     token::Token,
@@ -60,6 +60,10 @@ impl Environment {
             .get(key.as_ref())
             .map_or(Object::Nil, |v| v.clone())
     }
+
+    pub(crate) fn is_declared<K: AsRef<[u8]>>(&self, key: K) -> bool {
+        self.values.contains_key(key.as_ref())
+    }
 }
 
 pub(crate) struct Interpreter {
@@ -79,6 +83,9 @@ pub(crate) enum EvaluationError {
         operator: Token,
         right: Object,
     },
+    UndefinedVariable {
+        identifier: Bytes,
+    },
 }
 
 impl std::fmt::Debug for EvaluationError {
@@ -97,6 +104,10 @@ impl std::fmt::Debug for EvaluationError {
                 "InvalidOperation: {operator}, left: {left}, right: {right}"
             ),
             EvaluationError::Adhoc(str) => write!(f, "{str}"),
+            EvaluationError::UndefinedVariable { identifier } => {
+                let ident = unsafe { std::str::from_utf8_unchecked(identifier) };
+                write!(f, "undefined variable '{ident}'")
+            }
         }
     }
 }
@@ -283,7 +294,7 @@ impl Interpreter {
             .parser
             .parse_program()
             .or_else(|e| Err(EvaluationError::ParseError(e)))?;
-        eprintln!("parsed statements successfully");
+        // eprintln!("parsed statements successfully");
 
         for stmt in statements.iter() {
             match stmt {
@@ -301,6 +312,15 @@ impl Interpreter {
                     } else {
                         self.env.add(identifier.clone(), Object::Nil);
                     }
+                }
+                Statement::Assignment(Assignment { identifier, expr }) => {
+                    if !self.env.is_declared(identifier) {
+                        return Err(EvaluationError::UndefinedVariable {
+                            identifier: identifier.clone(),
+                        });
+                    }
+                    let val = self.evaluate_expression(expr)?;
+                    self.env.add(identifier.clone(), val);
                 }
             }
         }

@@ -68,10 +68,16 @@ pub(crate) struct VarDeclaration {
     pub(crate) expr: Option<Expression>,
 }
 
+pub(crate) struct Assignment {
+    pub(crate) identifier: Bytes,
+    pub(crate) expr: Expression,
+}
+
 pub(crate) enum Statement {
     Expression(Expression),
     Print(Expression),
     VarDeclaration(VarDeclaration),
+    Assignment(Assignment),
 }
 
 impl std::fmt::Debug for Statement {
@@ -85,6 +91,10 @@ impl std::fmt::Debug for Statement {
                     Some(expr) => write!(f, "var {} = {:?};", identifier, expr),
                     None => write!(f, "var {};", identifier),
                 }
+            }
+            Statement::Assignment(Assignment { identifier, expr }) => {
+                let identifier = unsafe { std::str::from_utf8_unchecked(identifier.as_ref()) };
+                write!(f, "{identifier} = {:?}", expr)
             }
         }
     }
