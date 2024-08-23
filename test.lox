@@ -2,8 +2,19 @@ var b = 1;
 var a = 5 + b;
 print a;
 
-a = -100;
-print a;
-
-c = 1000;
-
+{
+    print 4;
+    print a + b;
+    {
+        print a;
+        a = 100;
+        print a;
+        var a = 200;
+        print a;
+        print "kumarmo2";
+    }
+    print a;
+    var c = 123;
+    print c;
+}
+print a + c;

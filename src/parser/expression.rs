@@ -78,6 +78,29 @@ pub(crate) enum Statement {
     Print(Expression),
     VarDeclaration(VarDeclaration),
     Assignment(Assignment),
+    Block(Vec<Box<Statement>>),
+}
+
+impl Statement {
+    fn print_statements(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        prefix_whitespace: &str,
+        statements: &Vec<Box<Statement>>,
+    ) -> std::fmt::Result {
+        for stmt in statements.iter() {
+            match stmt.as_ref() {
+                Statement::Block(stms) => {
+                    write!(f, "{prefix_whitespace}{{\n")?;
+                    let _ =
+                        self.print_statements(f, format!("{prefix_whitespace}  ").as_str(), &stms)?;
+                    write!(f, "{prefix_whitespace}}}\n")?;
+                }
+                st => write!(f, "{prefix_whitespace}{:?}\n", st)?,
+            }
+        }
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for Statement {
@@ -95,6 +118,13 @@ impl std::fmt::Debug for Statement {
             Statement::Assignment(Assignment { identifier, expr }) => {
                 let identifier = unsafe { std::str::from_utf8_unchecked(identifier.as_ref()) };
                 write!(f, "{identifier} = {:?}", expr)
+            }
+            Statement::Block(statements) => {
+                let _ = write!(f, "{{\n")?;
+                self.print_statements(f, "  ", statements)?;
+                let _ = write!(f, "}}")?;
+
+                Ok(())
             }
         }
     }

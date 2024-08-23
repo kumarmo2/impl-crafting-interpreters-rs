@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::borrow::Borrow;
+
 use bytes::Bytes;
 use expression::{Assignment, Expression, Precedence, Statement, VarDeclaration};
 
@@ -199,7 +201,7 @@ impl Parser {
             }
             _ => {
                 return Err(ParseError::ExpectedTokenNotFound {
-                    expected: ";",
+                    expected: ";....",
                     got: self.peek_token.clone(),
                     line: self.get_curr_line(),
                 });
@@ -238,11 +240,6 @@ impl Parser {
                 })
             }
         };
-        // eprintln!(
-        //     "found ident_bytes in var dev: {}, peek_token: {}",
-        //     unsafe { std::str::from_utf8_unchecked(ident_bytes.as_ref()) },
-        //     self.peek_token
-        // );
         match self.peek_token.clone() {
             Token::SEMICOLON => Ok(Statement::VarDeclaration(VarDeclaration {
                 identifier: ident_bytes,
@@ -250,12 +247,7 @@ impl Parser {
             })),
             Token::EQUAL => {
                 self.advance_token();
-                // eprintln!(
-                //     "found ====, curr_token before advanceing: {}",
-                //     self.curr_token
-                // );
                 self.advance_token();
-                // eprintln!("curr_token after advanceing: {}", self.curr_token);
                 let expr = self.parse_expression(Precedence::Lowest)?;
                 Ok(Statement::VarDeclaration(VarDeclaration {
                     identifier: ident_bytes,
@@ -269,6 +261,41 @@ impl Parser {
             }),
         }
     }
+    fn parse_single_statement(&mut self) -> Result<Statement, ParseError> {
+        let stmt = match &self.curr_token {
+            Token::Print => {
+                self.advance_token();
+                let expr = self.parse_expression(Precedence::Lowest)?;
+                Statement::Print(expr)
+            }
+            Token::Var => self.parse_var_declaration()?,
+            Token::Identifier(ident_bytes) => self.parse_assignment(ident_bytes.clone())?,
+            _ => Statement::Expression(self.parse_expression(Precedence::Lowest)?),
+        };
+        self.ensure_semicolon_at_statement_end()?;
+        self.advance_token();
+        Ok(stmt)
+    }
+
+    fn parse_statement(&mut self) -> Result<Statement, ParseError> {
+        let stmt = match &self.curr_token {
+            Token::LBrace => {
+                self.advance_token();
+                let mut stms: Vec<Box<Statement>> = vec![];
+                loop {
+                    if let Token::RBrace = self.curr_token {
+                        self.advance_token();
+                        break;
+                    }
+                    let stmt = self.parse_statement()?;
+                    stms.push(Box::new(stmt));
+                }
+                Statement::Block(stms)
+            }
+            _ => self.parse_single_statement()?,
+        };
+        Ok(stmt)
+    }
 
     pub(crate) fn parse_program(&mut self) -> Result<Vec<Statement>, ParseError> {
         let mut statements = vec![];
@@ -276,26 +303,8 @@ impl Parser {
             if let Token::EOF = self.curr_token {
                 break;
             }
-            match &self.curr_token {
-                Token::Print => {
-                    self.advance_token();
-                    let expr = self.parse_expression(Precedence::Lowest)?;
-                    statements.push(Statement::Print(expr));
-                }
-                Token::Var => {
-                    let dec = self.parse_var_declaration()?;
-                    statements.push(dec);
-                }
-                Token::Identifier(ident_bytes) => {
-                    statements.push(self.parse_assignment(ident_bytes.clone())?);
-                }
-                _ => {
-                    let expr = self.parse_expression(Precedence::Lowest)?;
-                    statements.push(Statement::Expression(expr));
-                }
-            }
-            self.ensure_semicolon_at_statement_end()?;
-            self.advance_token();
+            let stmt = self.parse_statement()?;
+            statements.push(stmt);
         }
         Ok(statements)
     }

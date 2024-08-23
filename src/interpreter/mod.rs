@@ -1,6 +1,13 @@
 #![allow(dead_code, unused_variables)]
 
-use std::collections::HashMap;
+use std::{
+    borrow::{Borrow, BorrowMut},
+    cell::RefCell,
+    collections::HashMap,
+    marker::PhantomData,
+    ops::Deref,
+    rc::Rc,
+};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -12,7 +19,7 @@ use crate::{
     token::Token,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum Object {
     Number(f64),
     Boolean(bool),
@@ -45,9 +52,11 @@ impl std::fmt::Display for Object {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct Environment {
+    _phantom: PhantomData<()>,
     values: HashMap<Bytes, Object>,
+    parent_env: Option<Rc<RefCell<Environment>>>, // 'p_env >= 'env
 }
 
 impl Environment {
@@ -55,20 +64,42 @@ impl Environment {
         self.values.insert(key, val)
     }
 
+    pub(crate) fn assign(&mut self, key: Bytes, val: Object) -> Option<Object> {
+        if self.values.contains_key(key.as_ref()) {
+            return self.values.insert(key, val);
+        }
+        if let Some(parent_env) = self.parent_env.as_ref() {
+            return parent_env.clone().as_ref().borrow_mut().assign(key, val);
+        }
+        unreachable!()
+    }
+
     pub(crate) fn get<K: AsRef<[u8]>>(&self, key: K) -> Object {
-        self.values
-            .get(key.as_ref())
-            .map_or(Object::Nil, |v| v.clone())
+        if self.values.contains_key(key.as_ref()) {
+            return self
+                .values
+                .get(key.as_ref())
+                .map_or(Object::Nil, |v| v.clone());
+        }
+        if let Some(parent_env) = &self.parent_env {
+            return parent_env.as_ref().borrow().get(key.as_ref());
+        }
+        Object::Nil
     }
 
     pub(crate) fn is_declared<K: AsRef<[u8]>>(&self, key: K) -> bool {
-        self.values.contains_key(key.as_ref())
+        if self.values.contains_key(key.as_ref()) {
+            return true;
+        }
+        if let Some(parent_env) = &self.parent_env {
+            return parent_env.as_ref().borrow().is_declared(key);
+        }
+        false
     }
 }
 
 pub(crate) struct Interpreter {
     parser: Parser,
-    env: Environment,
 }
 
 pub(crate) enum EvaluationError {
@@ -118,7 +149,7 @@ impl Interpreter {
 
         Ok(Self {
             parser,
-            env: Environment::default(),
+            // global_env: Environment::default(),
         })
     }
 
@@ -203,13 +234,14 @@ impl Interpreter {
     }
 
     fn evaluate_infix_expression(
-        &mut self,
+        &self,
         operator: Token,
         left_expr: &Expression,
         right_expr: &Expression,
+        env: Rc<RefCell<Environment>>,
     ) -> Result<Object, EvaluationError> {
-        let left_value = self.evaluate_expression(left_expr)?;
-        let right_value = self.evaluate_expression(right_expr)?;
+        let left_value = self.evaluate_expression(left_expr, env.clone())?;
+        let right_value = self.evaluate_expression(right_expr, env.clone())?;
         match (&left_value, &right_value) {
             (Object::Number(left), Object::Number(right)) => Ok(
                 Interpreter::evaluate_numeric_infix_operation(operator, *left, *right),
@@ -235,11 +267,12 @@ impl Interpreter {
     }
 
     fn evaluate_prefix_expression(
-        &mut self,
+        &self,
         operator: Token,
         expression: &Expression,
+        env: Rc<RefCell<Environment>>,
     ) -> Result<Object, EvaluationError> {
-        let value = self.evaluate_expression(expression)?;
+        let value = self.evaluate_expression(expression, env)?;
         let object = match operator {
             Token::BANG => Object::Boolean(!value.get_truthy_value()),
             Token::MINUS => match value {
@@ -256,16 +289,27 @@ impl Interpreter {
         Ok(object)
     }
 
-    fn evaluate_expression(&mut self, expression: &Expression) -> Result<Object, EvaluationError> {
+    fn evaluate_expression(
+        &self,
+        expression: &Expression,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<Object, EvaluationError> {
         let val = match expression {
             Expression::NilLiteral => Object::Nil,
-            Expression::Ident(ident_bytes) => self.env.get(ident_bytes),
+            Expression::Ident(ident_bytes) => {
+                if !env.as_ref().borrow().is_declared(ident_bytes) {
+                    return Err(EvaluationError::UndefinedVariable {
+                        identifier: ident_bytes.clone(),
+                    });
+                }
+                env.as_ref().borrow().get(ident_bytes)
+            }
             Expression::BooleanLiteral(v) => Object::Boolean(*v),
             Expression::NumberLiteral(v) => Object::Number(*v),
             Expression::StringLiteral(bytes) => Object::String(bytes.clone()),
-            Expression::GroupedExpression(expr) => self.evaluate_expression(expr.as_ref())?,
+            Expression::GroupedExpression(expr) => self.evaluate_expression(expr.as_ref(), env)?,
             Expression::PrefixExpression { operator, expr } => {
-                self.evaluate_prefix_expression(operator.clone(), expr.as_ref())?
+                self.evaluate_prefix_expression(operator.clone(), expr.as_ref(), env)?
             }
             Expression::InfixExpression {
                 operator,
@@ -275,18 +319,67 @@ impl Interpreter {
                 operator.clone(),
                 left_expr.as_ref(),
                 right_expr.as_ref(),
+                env,
             )?,
         };
         Ok(val)
     }
 
     pub(crate) fn evaluate(&mut self) -> Result<Object, EvaluationError> {
+        let env = Environment::default();
         let expression = self
             .parser
             .parse_expression(Precedence::Lowest)
             .or_else(|e| Err(EvaluationError::ParseError(e)))?;
 
-        self.evaluate_expression(&expression)
+        self.evaluate_expression(&expression, Rc::new(RefCell::new(env)))
+    }
+
+    pub(crate) fn evaluate_stmt(
+        &self,
+        stmt: &Statement,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<(), EvaluationError> {
+        match stmt {
+            Statement::Expression(e) => {
+                let _ = self.evaluate_expression(e, env);
+            }
+            Statement::Print(e) => {
+                let val = self.evaluate_expression(e, env)?;
+                println!("{}", val);
+            }
+            Statement::VarDeclaration(VarDeclaration { identifier, expr }) => {
+                if let Some(expr) = expr {
+                    let val = self.evaluate_expression(expr, env.clone())?;
+                    env.as_ref().borrow_mut().add(identifier.clone(), val);
+                } else {
+                    env.as_ref()
+                        .borrow_mut()
+                        .add(identifier.clone(), Object::Nil);
+                }
+            }
+            Statement::Assignment(Assignment { identifier, expr }) => {
+                if !env.as_ref().borrow().is_declared(identifier) {
+                    return Err(EvaluationError::UndefinedVariable {
+                        identifier: identifier.clone(),
+                    });
+                }
+                let val = self.evaluate_expression(expr, env.clone())?;
+                env.as_ref().borrow_mut().assign(identifier.clone(), val);
+            }
+            Statement::Block(stmts) => {
+                let child_env = Rc::new(RefCell::new(Environment {
+                    values: HashMap::new(),
+                    parent_env: Some(env.clone()),
+                    _phantom: PhantomData {},
+                }));
+                // println!("child_env: {:?}", child_env);
+                for stmt in stmts.iter() {
+                    self.evaluate_stmt(stmt.as_ref(), child_env.clone())?;
+                }
+            }
+        };
+        Ok(())
     }
 
     pub(crate) fn evaluate_program(&mut self) -> Result<(), EvaluationError> {
@@ -294,35 +387,11 @@ impl Interpreter {
             .parser
             .parse_program()
             .or_else(|e| Err(EvaluationError::ParseError(e)))?;
-        // eprintln!("parsed statements successfully");
+
+        let mut global_env = Rc::new(RefCell::new(Environment::default()));
 
         for stmt in statements.iter() {
-            match stmt {
-                Statement::Expression(e) => {
-                    let _ = self.evaluate_expression(e);
-                }
-                Statement::Print(e) => {
-                    let val = self.evaluate_expression(e)?;
-                    println!("{}", val);
-                }
-                Statement::VarDeclaration(VarDeclaration { identifier, expr }) => {
-                    if let Some(expr) = expr {
-                        let val = self.evaluate_expression(expr)?;
-                        self.env.add(identifier.clone(), val);
-                    } else {
-                        self.env.add(identifier.clone(), Object::Nil);
-                    }
-                }
-                Statement::Assignment(Assignment { identifier, expr }) => {
-                    if !self.env.is_declared(identifier) {
-                        return Err(EvaluationError::UndefinedVariable {
-                            identifier: identifier.clone(),
-                        });
-                    }
-                    let val = self.evaluate_expression(expr)?;
-                    self.env.add(identifier.clone(), val);
-                }
-            }
+            self.evaluate_stmt(stmt, global_env.clone())?;
         }
         Ok(())
     }
