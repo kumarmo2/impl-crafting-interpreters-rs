@@ -73,12 +73,19 @@ pub(crate) struct Assignment {
     pub(crate) expr: Expression,
 }
 
+pub(crate) struct IfStatement {
+    pub(crate) expr: Expression,
+    pub(crate) if_block: Statement,
+    pub(crate) else_block: Option<Statement>,
+}
+
 pub(crate) enum Statement {
     Expression(Expression),
     Print(Expression),
     VarDeclaration(VarDeclaration),
     Assignment(Assignment),
     Block(Vec<Box<Statement>>),
+    IfStatement(Box<IfStatement>),
 }
 
 impl Statement {
@@ -120,11 +127,25 @@ impl std::fmt::Debug for Statement {
                 write!(f, "{identifier} = {:?}", expr)
             }
             Statement::Block(statements) => {
-                let _ = write!(f, "{{\n")?;
+                write!(f, "{{\n")?;
                 self.print_statements(f, "  ", statements)?;
-                let _ = write!(f, "}}")?;
+                write!(f, "}}")?;
 
                 Ok(())
+            }
+            Statement::IfStatement(stmt) => {
+                let IfStatement {
+                    if_block,
+                    expr,
+                    else_block,
+                } = stmt.as_ref();
+
+                let _ = write!(f, "if {:?} ", expr)?;
+                write!(f, "{:?}", if_block)?; // TODO: better pretty printing.
+                let Some(else_block) = else_block else {
+                    return Ok(());
+                };
+                write!(f, " else {:?}\n", else_block)
             }
         }
     }

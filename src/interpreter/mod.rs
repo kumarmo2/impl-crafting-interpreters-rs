@@ -1,19 +1,12 @@
 #![allow(dead_code, unused_variables)]
 
-use std::{
-    borrow::{Borrow, BorrowMut},
-    cell::RefCell,
-    collections::HashMap,
-    marker::PhantomData,
-    ops::Deref,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{
     parser::{
-        expression::{Assignment, Expression, Precedence, Statement, VarDeclaration},
+        expression::{Assignment, Expression, IfStatement, Precedence, Statement, VarDeclaration},
         ParseError, Parser,
     },
     token::Token,
@@ -52,11 +45,12 @@ impl std::fmt::Display for Object {
     }
 }
 
+type Env = Rc<RefCell<Environment>>;
+
 #[derive(Default, Debug)]
 pub(crate) struct Environment {
-    _phantom: PhantomData<()>,
     values: HashMap<Bytes, Object>,
-    parent_env: Option<Rc<RefCell<Environment>>>, // 'p_env >= 'env
+    parent_env: Option<Env>, // 'p_env >= 'env
 }
 
 impl Environment {
@@ -371,14 +365,39 @@ impl Interpreter {
                 let child_env = Rc::new(RefCell::new(Environment {
                     values: HashMap::new(),
                     parent_env: Some(env.clone()),
-                    _phantom: PhantomData {},
                 }));
-                // println!("child_env: {:?}", child_env);
                 for stmt in stmts.iter() {
                     self.evaluate_stmt(stmt.as_ref(), child_env.clone())?;
                 }
             }
+            Statement::IfStatement(if_statement) => {
+                self.evaluate_if_statement(if_statement, env.clone())?
+            }
         };
+        Ok(())
+    }
+
+    fn evaluate_if_statement(
+        &self,
+        if_statement: &IfStatement,
+        env: Env,
+    ) -> Result<(), EvaluationError> {
+        let expr = &if_statement.expr;
+        let val = self.evaluate_expression(expr, env.clone())?;
+        let val = match val {
+            Object::Boolean(v) => v,
+            object => {
+                return Err(EvaluationError::ExpectedSomethingButGotOther {
+                    expected: "boolean expression",
+                    got: object,
+                })
+            }
+        };
+        if val {
+            self.evaluate_stmt(&if_statement.if_block, env.clone())?
+        } else if let Some(else_block) = &if_statement.else_block {
+            self.evaluate_stmt(else_block, env.clone())?;
+        }
         Ok(())
     }
 
@@ -388,7 +407,7 @@ impl Interpreter {
             .parse_program()
             .or_else(|e| Err(EvaluationError::ParseError(e)))?;
 
-        let mut global_env = Rc::new(RefCell::new(Environment::default()));
+        let global_env = Rc::new(RefCell::new(Environment::default()));
 
         for stmt in statements.iter() {
             self.evaluate_stmt(stmt, global_env.clone())?;

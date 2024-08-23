@@ -1,9 +1,7 @@
 #![allow(dead_code)]
 
-use std::borrow::Borrow;
-
 use bytes::Bytes;
-use expression::{Assignment, Expression, Precedence, Statement, VarDeclaration};
+use expression::{Assignment, Expression, IfStatement, Precedence, Statement, VarDeclaration};
 
 use crate::token::{LexicalError, Scanner, Token, TokenIterator};
 pub(crate) mod expression;
@@ -261,6 +259,39 @@ impl Parser {
             }),
         }
     }
+
+    fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
+        // println!(
+        //     " >> inside parse_if_statement, before advaning curr_token: {}",
+        //     self.curr_token
+        // );
+        self.advance_token();
+        // println!(
+        //     " >> inside parse_if_statement, after advaning curr_token: {}",
+        //     self.curr_token
+        // );
+        let expr = self.parse_expression(Precedence::Lowest)?;
+        // println!("expr: {:?}, \ncurr_token: {:?}", expr, self.curr_token);
+        self.advance_token();
+        // println!("before if_block, curr_token: {:?}", self.curr_token);
+        let if_block = self.parse_statement()?;
+        // println!(
+        //     "if_block: {:?}\n curr_token: {:?}",
+        //     if_block, self.curr_token
+        // );
+        let mut else_block = None;
+        if let Token::Else = self.curr_token {
+            self.advance_token();
+            else_block = Some(self.parse_statement()?);
+        } else {
+            println!("... else not found!");
+        }
+        Ok(Statement::IfStatement(Box::new(IfStatement {
+            else_block,
+            expr,
+            if_block,
+        })))
+    }
     fn parse_single_statement(&mut self) -> Result<Statement, ParseError> {
         let stmt = match &self.curr_token {
             Token::Print => {
@@ -270,6 +301,9 @@ impl Parser {
             }
             Token::Var => self.parse_var_declaration()?,
             Token::Identifier(ident_bytes) => self.parse_assignment(ident_bytes.clone())?,
+            Token::If => {
+                return self.parse_if_statement();
+            }
             _ => Statement::Expression(self.parse_expression(Precedence::Lowest)?),
         };
         self.ensure_semicolon_at_statement_end()?;
