@@ -1,3 +1,26 @@
+true and print "condition passed";
+var z = true and print "nil will be assigned";
+print z;
+
+z = true and "now the string is assigned";
+print z;
+
+z = false and "this will not be assigned";
+
+if !z {
+    print "false is assigned";
+}
+
+if true and 5 > 2 {
+    print "5 > 2 is fact";
+}
+
+if true and print "this will be printed" + 10 {
+    print "inside if block";
+} else {
+    print "inside else block";
+}
+
 var b = 11;
 if b >= 10 {
     print "b is >= 10";
