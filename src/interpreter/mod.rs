@@ -216,14 +216,41 @@ impl Interpreter {
             | Token::LESS
             | Token::LESSEQUAL
             | Token::GREATER
-            | Token::GREATEREQUAL => {
-                Err(EvaluationError::Adhoc(format!("Operands must be numbers.")))
-            }
+            | Token::GREATEREQUAL => Err(EvaluationError::Adhoc(format!(
+                "Error: Operands must be numbers." // TODO: need to print the line number as well.
+            ))),
             _ => Err(EvaluationError::InvalidOperation {
                 left: left.clone(),
                 operator: operator,
                 right: right.clone(),
             }),
+        }
+    }
+
+    fn evaluate_and_expression(
+        &self,
+        left_expr: &Expression,
+        right_expr: &Expression,
+        env: Env,
+    ) -> Result<Object, EvaluationError> {
+        let left_value = self.evaluate_expression(left_expr, env.clone())?;
+        if !left_value.get_truthy_value() {
+            Ok(left_value)
+        } else {
+            self.evaluate_expression(right_expr, env.clone())
+        }
+    }
+    fn evaluate_or_expression(
+        &self,
+        left_expr: &Expression,
+        right_expr: &Expression,
+        env: Env,
+    ) -> Result<Object, EvaluationError> {
+        let left_value = self.evaluate_expression(left_expr, env.clone())?;
+        if left_value.get_truthy_value() {
+            Ok(left_value)
+        } else {
+            self.evaluate_expression(right_expr, env.clone())
         }
     }
 
@@ -234,6 +261,12 @@ impl Interpreter {
         right_expr: &Expression,
         env: Rc<RefCell<Environment>>,
     ) -> Result<Object, EvaluationError> {
+        if let Token::And = operator {
+            return self.evaluate_and_expression(left_expr, right_expr, env);
+        }
+        if let Token::Or = operator {
+            return self.evaluate_or_expression(left_expr, right_expr, env);
+        }
         let left_value = self.evaluate_expression(left_expr, env.clone())?;
         let right_value = self.evaluate_expression(right_expr, env.clone())?;
         match (&left_value, &right_value) {
@@ -273,7 +306,7 @@ impl Interpreter {
                 Object::Number(v) => Object::Number(-v),
                 object => {
                     return Err(EvaluationError::Adhoc(format!(
-                        "Operand must be a number.\n[line {}]",
+                        "Error: Operand must be a number.\n[line {}]",
                         self.parser.get_curr_line()
                     )))
                 }
@@ -315,6 +348,11 @@ impl Interpreter {
                 right_expr.as_ref(),
                 env,
             )?,
+            Expression::Print(e) => {
+                let val = self.evaluate_expression(e.as_ref(), env.clone())?;
+                println!("{}", val);
+                Object::Nil
+            }
         };
         Ok(val)
     }
@@ -384,15 +422,7 @@ impl Interpreter {
     ) -> Result<(), EvaluationError> {
         let expr = &if_statement.expr;
         let val = self.evaluate_expression(expr, env.clone())?;
-        let val = match val {
-            Object::Boolean(v) => v,
-            object => {
-                return Err(EvaluationError::ExpectedSomethingButGotOther {
-                    expected: "boolean expression",
-                    got: object,
-                })
-            }
-        };
+        let val = val.get_truthy_value();
         if val {
             self.evaluate_stmt(&if_statement.if_block, env.clone())?
         } else if let Some(else_block) = &if_statement.else_block {

@@ -4,6 +4,12 @@ use crate::token::Token;
 
 pub(crate) enum Expression {
     NilLiteral,
+    // NOTE: I had to add the "Print" expression because of majorly one reason.
+    // 1. Lox's "and"/"or" operator works like javascript's. that means below is a valid expression
+    // `true and print "this should be printed"
+    // 2. Along with the above reason, also the "print" is not a function but is built directly
+    //    into the language.
+    Print(Box<Expression>),
     BooleanLiteral(bool),
     NumberLiteral(f64),
     StringLiteral(Bytes),
@@ -42,6 +48,7 @@ impl std::fmt::Debug for Expression {
             Expression::Ident(ident_bytes) => write!(f, "ident: {}", unsafe {
                 std::str::from_utf8_unchecked(ident_bytes.as_ref())
             }),
+            Expression::Print(e) => write!(f, "print {:?}", e.as_ref()),
         }
     }
 }
@@ -50,11 +57,13 @@ impl std::fmt::Debug for Expression {
 pub(crate) enum Precedence {
     Lowest = 1,
     Equals = 2,
-    LessGreater = 3,
-    Sum = 4,
-    Product = 5,
-    Prefix = 6,
-    Call = 7,
+    Or = 3,
+    And = 4,
+    LessGreater = 5,
+    Sum = 6,
+    Product = 7,
+    Prefix = 8,
+    Call = 9,
 }
 
 impl Precedence {

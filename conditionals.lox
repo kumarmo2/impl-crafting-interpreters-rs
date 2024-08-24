@@ -1,0 +1,14 @@
+if true and print "this shall be printed" {
+    print "inside if block. This will not be printed";
+} else {
+    print "this else block should be printed";
+}
+
+
+if true and print "this will be printed" + 10 {
+    print "inside if block";
+} else {
+    print "inside else block";
+}
+
+print "end";

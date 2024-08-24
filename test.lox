@@ -15,12 +15,6 @@ if true and 5 > 2 {
     print "5 > 2 is fact";
 }
 
-if true and print "this will be printed" + 10 {
-    print "inside if block";
-} else {
-    print "inside else block";
-}
-
 var b = 11;
 if b >= 10 {
     print "b is >= 10";

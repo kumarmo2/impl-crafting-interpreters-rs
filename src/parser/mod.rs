@@ -121,8 +121,10 @@ impl Parser {
         left_expr: Expression,
     ) -> ParseResult<Expression> {
         let operator = self.curr_token.clone();
+        // println!("left_expr: {:?}, operator: {:?}", left_expr, operator);
         self.advance_token();
         let right_expr = self.parse_expression(operator.get_precedence())?;
+        // println!("right_expr: {:?}", right_expr);
         Ok(Expression::InfixExpression {
             operator: operator,
             left_expr: Box::new(left_expr),
@@ -143,6 +145,11 @@ impl Parser {
             Token::LParen => self.parse_prefix_grouped_expression()?,
             Token::MINUS | Token::BANG => self.parse_prefix_operator_expression()?,
             Token::Identifier(ident_bytes) => Expression::Ident(ident_bytes.clone()),
+            Token::Print => {
+                self.advance_token();
+                let expr = self.parse_expression(precendence.clone())?;
+                Expression::Print(Box::new(expr))
+            }
             Token::Nil => {
                 self.advance_token();
                 Expression::NilLiteral
@@ -157,13 +164,7 @@ impl Parser {
         };
 
         loop {
-            // eprintln!(
-            //     "curr_token: {curr_token}, precendence: {precendence}",
-            //     curr_token = self.curr_token,
-            //     precendence = self.curr_token.get_precedence().value()
-            // );
             if let Token::EOF = self.peek_token {
-                // eprintln!("&&&&&&&&&&&&& found EOF");
                 break;
             }
             if precendence.value() >= self.peek_token.get_precedence().value() {
@@ -178,6 +179,8 @@ impl Parser {
                 | Token::LESSEQUAL
                 | Token::GREATER
                 | Token::GREATEREQUAL
+                | Token::And
+                | Token::Or
                 | Token::EQUALEQUAL
                 | Token::BANGEQUAL => {
                     self.advance_token();
@@ -261,30 +264,14 @@ impl Parser {
     }
 
     fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
-        // println!(
-        //     " >> inside parse_if_statement, before advaning curr_token: {}",
-        //     self.curr_token
-        // );
         self.advance_token();
-        // println!(
-        //     " >> inside parse_if_statement, after advaning curr_token: {}",
-        //     self.curr_token
-        // );
         let expr = self.parse_expression(Precedence::Lowest)?;
-        // println!("expr: {:?}, \ncurr_token: {:?}", expr, self.curr_token);
         self.advance_token();
-        // println!("before if_block, curr_token: {:?}", self.curr_token);
         let if_block = self.parse_statement()?;
-        // println!(
-        //     "if_block: {:?}\n curr_token: {:?}",
-        //     if_block, self.curr_token
-        // );
         let mut else_block = None;
         if let Token::Else = self.curr_token {
             self.advance_token();
             else_block = Some(self.parse_statement()?);
-        } else {
-            println!("... else not found!");
         }
         Ok(Statement::IfStatement(Box::new(IfStatement {
             else_block,
