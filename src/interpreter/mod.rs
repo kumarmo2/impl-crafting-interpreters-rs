@@ -6,7 +6,9 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{
     parser::{
-        expression::{Assignment, Expression, IfStatement, Precedence, Statement, VarDeclaration},
+        expression::{
+            Assignment, Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop,
+        },
         ParseError, Parser,
     },
     token::Token,
@@ -411,10 +413,30 @@ impl Interpreter {
             Statement::IfStatement(if_statement) => {
                 self.evaluate_if_statement(if_statement, env.clone())?
             }
+            Statement::WhileLoop(while_loop) => {
+                self.evaluate_while_statement(while_loop, env.clone())?
+            }
         };
         Ok(())
     }
+    fn evaluate_while_statement(
+        &self,
+        while_loop: &WhileLoop,
+        env: Env,
+    ) -> Result<(), EvaluationError> {
+        let expr = &while_loop.expr;
 
+        loop {
+            let val = self.evaluate_expression(expr, env.clone())?;
+            let val = val.get_truthy_value();
+            if !val {
+                break;
+            }
+            self.evaluate_stmt(while_loop.block.as_ref(), env.clone())?
+        }
+
+        Ok(())
+    }
     fn evaluate_if_statement(
         &self,
         if_statement: &IfStatement,

@@ -5,10 +5,14 @@ if true and print "this shall be printed" {
 }
 
 
-if true and print "this will be printed" + 10 {
-    print "inside if block";
-} else {
-    print "inside else block";
+if i < 5 {
+    print "printing from second if block.";
 }
+
+// if true and print "this will be printed" + 10 {
+    // print "inside if block";
+// } else {
+    // print "inside else block";
+// }
 
 print "end";

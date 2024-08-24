@@ -88,6 +88,11 @@ pub(crate) struct IfStatement {
     pub(crate) else_block: Option<Statement>,
 }
 
+pub(crate) struct WhileLoop {
+    pub(crate) expr: Expression,
+    pub(crate) block: Box<Statement>,
+}
+
 pub(crate) enum Statement {
     Expression(Expression),
     Print(Expression),
@@ -95,6 +100,7 @@ pub(crate) enum Statement {
     Assignment(Assignment),
     Block(Vec<Box<Statement>>),
     IfStatement(Box<IfStatement>),
+    WhileLoop(WhileLoop),
 }
 
 impl Statement {
@@ -155,6 +161,9 @@ impl std::fmt::Debug for Statement {
                     return Ok(());
                 };
                 write!(f, " else {:?}\n", else_block)
+            }
+            Statement::WhileLoop(WhileLoop { expr, block }) => {
+                write!(f, "while ( {:?} ) {:?}", expr, block)
             }
         }
     }

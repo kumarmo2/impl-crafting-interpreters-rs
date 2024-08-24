@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 
 use bytes::Bytes;
-use expression::{Assignment, Expression, IfStatement, Precedence, Statement, VarDeclaration};
+use expression::{
+    Assignment, Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop,
+};
 
 use crate::token::{LexicalError, Scanner, Token, TokenIterator};
 pub(crate) mod expression;
@@ -81,7 +83,6 @@ impl Parser {
             true
         };
         std::mem::swap(&mut self.curr_token, &mut self.peek_token);
-        // eprintln!(">>advance_token called: curr_token: {:?}", self.curr_token);
         if should_forward_peek_token {
             // TODO: remove unwraps
             self.peek_token = self._token_iterator.next().unwrap().unwrap();
@@ -279,6 +280,17 @@ impl Parser {
             if_block,
         })))
     }
+
+    fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
+        self.advance_token();
+        let expr = self.parse_expression(Precedence::Lowest)?;
+        self.advance_token();
+        let stmt = self.parse_statement()?;
+        Ok(Statement::WhileLoop(WhileLoop {
+            expr,
+            block: Box::new(stmt),
+        }))
+    }
     fn parse_single_statement(&mut self) -> Result<Statement, ParseError> {
         let stmt = match &self.curr_token {
             Token::Print => {
@@ -291,6 +303,7 @@ impl Parser {
             Token::If => {
                 return self.parse_if_statement();
             }
+            Token::While => return self.parse_while_statement(),
             _ => Statement::Expression(self.parse_expression(Precedence::Lowest)?),
         };
         self.ensure_semicolon_at_statement_end()?;
