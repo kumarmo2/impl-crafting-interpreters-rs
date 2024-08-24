@@ -89,7 +89,7 @@ pub(crate) struct IfStatement {
 }
 
 pub(crate) struct WhileLoop {
-    pub(crate) expr: Expression,
+    pub(crate) expr: Option<Expression>,
     pub(crate) block: Box<Statement>,
 }
 

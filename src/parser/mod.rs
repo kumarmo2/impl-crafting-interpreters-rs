@@ -122,10 +122,8 @@ impl Parser {
         left_expr: Expression,
     ) -> ParseResult<Expression> {
         let operator = self.curr_token.clone();
-        // println!("left_expr: {:?}, operator: {:?}", left_expr, operator);
         self.advance_token();
         let right_expr = self.parse_expression(operator.get_precedence())?;
-        // println!("right_expr: {:?}", right_expr);
         Ok(Expression::InfixExpression {
             operator: operator,
             left_expr: Box::new(left_expr),
@@ -203,7 +201,7 @@ impl Parser {
             }
             _ => {
                 return Err(ParseError::ExpectedTokenNotFound {
-                    expected: ";....",
+                    expected: ";",
                     got: self.peek_token.clone(),
                     line: self.get_curr_line(),
                 });
@@ -283,15 +281,70 @@ impl Parser {
 
     fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
         self.advance_token();
-        let expr = self.parse_expression(Precedence::Lowest)?;
-        self.advance_token();
+        let expr: Option<Expression>;
+        if let Token::LBrace = &self.curr_token {
+            expr = None
+        } else {
+            expr = Some(self.parse_expression(Precedence::Lowest)?);
+            self.advance_token();
+        }
+
         let stmt = self.parse_statement()?;
         Ok(Statement::WhileLoop(WhileLoop {
             expr,
             block: Box::new(stmt),
         }))
     }
-    fn parse_single_statement(&mut self) -> Result<Statement, ParseError> {
+
+    fn parse_for_statement_and_desugar_it(&mut self) -> Result<Statement, ParseError> {
+        self.advance_token();
+        let var_declaration: Option<Statement>;
+        let conditional_expr: Option<Expression>;
+        let incr_stmt: Option<Statement>;
+        let mut block_body: Statement;
+        if let Token::SEMICOLON = self.curr_token {
+            self.advance_token();
+            var_declaration = None;
+        } else {
+            let stmt = self.parse_statement()?;
+            var_declaration = Some(stmt);
+        }
+
+        if let Token::SEMICOLON = self.curr_token {
+            conditional_expr = None;
+        } else {
+            conditional_expr = Some(self.parse_expression(Precedence::Lowest)?);
+            self.advance_token();
+        }
+        self.advance_token();
+        if let Token::LBrace = self.curr_token {
+            block_body = self.parse_statement()?;
+            incr_stmt = None;
+        } else {
+            incr_stmt = Some(self.parse_single_statement_without_semicolon()?);
+            self.advance_token();
+            block_body = self.parse_statement()?;
+        }
+
+        let mut final_block_stmts = Vec::<Box<Statement>>::new();
+        if let Some(v) = var_declaration {
+            final_block_stmts.push(Box::new(v));
+        }
+
+        let mut while_block_body: Vec<Box<Statement>> = vec![Box::new(block_body)];
+
+        if let Some(v) = incr_stmt {
+            while_block_body.push(Box::new(v));
+        }
+        let while_loop = Statement::WhileLoop(WhileLoop {
+            expr: conditional_expr,
+            block: Box::new(Statement::Block(while_block_body)),
+        });
+        final_block_stmts.push(Box::new(while_loop));
+        Ok(Statement::Block(final_block_stmts))
+    }
+
+    fn parse_single_statement_without_semicolon(&mut self) -> ParseResult<Statement> {
         let stmt = match &self.curr_token {
             Token::Print => {
                 self.advance_token();
@@ -304,11 +357,24 @@ impl Parser {
                 return self.parse_if_statement();
             }
             Token::While => return self.parse_while_statement(),
+            Token::For => self.parse_for_statement_and_desugar_it()?,
             _ => Statement::Expression(self.parse_expression(Precedence::Lowest)?),
         };
-        self.ensure_semicolon_at_statement_end()?;
-        self.advance_token();
         Ok(stmt)
+    }
+
+    fn parse_single_statement(&mut self) -> Result<Statement, ParseError> {
+        let stmt = self.parse_single_statement_without_semicolon()?;
+        match &stmt {
+            Statement::IfStatement(_) | Statement::WhileLoop(_) | Statement::Block(_) => {
+                return Ok(stmt)
+            }
+            _ => {
+                self.ensure_semicolon_at_statement_end()?;
+                self.advance_token();
+                Ok(stmt)
+            }
+        }
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {

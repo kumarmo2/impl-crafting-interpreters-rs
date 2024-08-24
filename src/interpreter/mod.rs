@@ -424,11 +424,12 @@ impl Interpreter {
         while_loop: &WhileLoop,
         env: Env,
     ) -> Result<(), EvaluationError> {
-        let expr = &while_loop.expr;
-
         loop {
-            let val = self.evaluate_expression(expr, env.clone())?;
-            let val = val.get_truthy_value();
+            let mut val = true;
+            if let Some(expr) = &while_loop.expr {
+                let x = self.evaluate_expression(expr, env.clone())?;
+                val = x.get_truthy_value();
+            }
             if !val {
                 break;
             }
