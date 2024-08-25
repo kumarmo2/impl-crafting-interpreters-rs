@@ -2,7 +2,8 @@
 
 use bytes::Bytes;
 use expression::{
-    Assignment, Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop,
+    Assignment, Expression, FunctionExpression, IfStatement, Precedence, Statement, VarDeclaration,
+    WhileLoop,
 };
 
 use crate::token::{LexicalError, Scanner, Token, TokenIterator};
@@ -132,6 +133,103 @@ impl Parser {
     }
 
     #[allow(unused_variables)]
+    fn parse_function_expression(&mut self) -> ParseResult<Expression> {
+        self.advance_token();
+        let name: Option<Token>;
+        if let Token::Identifier(_) = &self.curr_token {
+            name = Some(self.curr_token.clone());
+            self.advance_token();
+        } else {
+            name = None;
+        }
+        match &self.curr_token {
+            Token::LParen => (),
+            token => {
+                return Err(ParseError::ExpectedTokenNotFound {
+                    expected: "(",
+                    got: token.clone(),
+                    line: self.get_curr_line(),
+                })
+            }
+        };
+        self.advance_token();
+
+        let mut params: Vec<Token> = Vec::new();
+
+        loop {
+            if let Token::RParen = &self.curr_token {
+                self.advance_token();
+                break;
+            }
+
+            let name_token = match &self.curr_token {
+                Token::Identifier(_) => self.curr_token.clone(),
+                t => {
+                    return Err(ParseError::ExpectedTokenNotFound {
+                        expected: "identifier",
+                        got: t.clone(),
+                        line: self.get_curr_line(),
+                    })
+                }
+            };
+            self.advance_token();
+
+            match &self.curr_token {
+                Token::RParen => (),
+                Token::COMMA => match &self.peek_token {
+                    Token::Identifier(_) => self.advance_token(),
+                    t => {
+                        return Err(ParseError::ExpectedTokenNotFound {
+                            expected: "identifier",
+                            got: t.clone(),
+                            line: self.get_curr_line(),
+                        })
+                    }
+                },
+                t => {
+                    return Err(ParseError::ExpectedTokenNotFound {
+                        expected: "identifier",
+                        got: t.clone(),
+                        line: self.get_curr_line(),
+                    })
+                }
+            }
+            params.push(name_token);
+        }
+        let body = match &self.curr_token {
+            Token::LBrace => self.parse_statement()?,
+            token => {
+                return Err(ParseError::ExpectedTokenNotFound {
+                    expected: "{",
+                    got: token.clone(),
+                    line: self.get_curr_line(),
+                })
+            }
+        };
+        if let Statement::Block(_) = body {
+            println!(".. .body is block statement");
+        } else {
+            println!("...wbody is not block statement");
+        }
+
+        // match &body {
+        //     Statement::Block(_) => (),
+        //     stmt => return Err(ParseError::)
+        //
+        // }
+
+        let params = match params.len() {
+            0 => None,
+            _ => Some(params),
+        };
+        Ok(Expression::Function(FunctionExpression {
+            body: Box::new(body),
+            parameters: params,
+            name,
+        }))
+    }
+
+    #[allow(unused_variables)]
     pub(crate) fn parse_expression(
         &mut self,
         precendence: Precedence,
@@ -153,6 +251,7 @@ impl Parser {
                 self.advance_token();
                 Expression::NilLiteral
             }
+            Token::Fun => self.parse_function_expression()?,
             t => {
                 return Err(ParseError::ExpectedTokenNotFound {
                     expected: "expression",
@@ -301,7 +400,7 @@ impl Parser {
         let var_declaration: Option<Statement>;
         let conditional_expr: Option<Expression>;
         let incr_stmt: Option<Statement>;
-        let mut block_body: Statement;
+        let block_body: Statement;
         if let Token::SEMICOLON = self.curr_token {
             self.advance_token();
             var_declaration = None;
@@ -369,6 +468,7 @@ impl Parser {
             Statement::IfStatement(_) | Statement::WhileLoop(_) | Statement::Block(_) => {
                 return Ok(stmt)
             }
+            Statement::Expression(Expression::Function(_)) => return Ok(stmt),
             _ => {
                 self.ensure_semicolon_at_statement_end()?;
                 self.advance_token();

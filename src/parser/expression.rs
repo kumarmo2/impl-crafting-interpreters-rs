@@ -24,6 +24,18 @@ pub(crate) enum Expression {
         left_expr: Box<Expression>,
         right_expr: Box<Expression>,
     },
+    Function(FunctionExpression),
+    Call(Box<CallExpression>),
+}
+pub(crate) struct CallExpression {
+    pub(crate) callee: Expression,
+    arguments: Option<Vec<Expression>>,
+}
+
+pub(crate) struct FunctionExpression {
+    pub(crate) name: Option<Token>,
+    pub(crate) parameters: Option<Vec<Token>>,
+    pub(crate) body: Box<Statement>,
 }
 
 impl std::fmt::Debug for Expression {
@@ -49,6 +61,43 @@ impl std::fmt::Debug for Expression {
                 std::str::from_utf8_unchecked(ident_bytes.as_ref())
             }),
             Expression::Print(e) => write!(f, "print {:?}", e.as_ref()),
+            Expression::Function(FunctionExpression {
+                name,
+                parameters,
+                body,
+            }) => {
+                write!(f, "fun")?;
+                match name {
+                    Some(name) => match name {
+                        Token::Identifier(name) => {
+                            let name = unsafe { std::str::from_utf8_unchecked(name) };
+                            write!(f, " {name}(")?;
+                        }
+                        _ => unreachable!(),
+                    },
+                    None => write!(f, "(")?,
+                };
+                if let Some(parameters) = parameters {
+                    let params = parameters
+                        .iter()
+                        .map(|p| match p {
+                            Token::Identifier(name_bytes) => unsafe {
+                                std::str::from_utf8_unchecked(name_bytes.as_ref())
+                            },
+                            _ => unreachable!("token must be identifier, but got {p:?}"),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    write!(f, "{params})")?;
+                } else {
+                    write!(f, ") ")?;
+                }
+                write!(f, "{body:?}")?;
+
+                Ok(())
+            }
+            Expression::Call(_) => todo!(),
         }
     }
 }
@@ -128,7 +177,11 @@ impl Statement {
 impl std::fmt::Debug for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Statement::Expression(e) => write!(f, "{:?};", e),
+            Statement::Expression(e) => match e {
+                Expression::Function(_) => write!(f, "{e:?}"),
+                _ => write!(f, "{:?};", e),
+            },
+
             Statement::Print(e) => write!(f, "print {:?};", e),
             Statement::VarDeclaration(VarDeclaration { identifier, expr }) => {
                 let identifier = unsafe { std::str::from_utf8_unchecked(identifier.as_ref()) };
@@ -142,6 +195,7 @@ impl std::fmt::Debug for Statement {
                 write!(f, "{identifier} = {:?}", expr)
             }
             Statement::Block(statements) => {
+                // println!("debug printing block statements");
                 write!(f, "{{\n")?;
                 self.print_statements(f, "  ", statements)?;
                 write!(f, "}}")?;

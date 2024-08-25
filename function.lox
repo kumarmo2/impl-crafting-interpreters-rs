@@ -1,0 +1,24 @@
+fun func1() {
+    // statements.
+}
+
+func1();
+
+fun() {
+
+}(); // IIFE.
+
+
+fun func2(a, b, c) {
+    return a + b + c
+}
+
+var a = func2(1, 2, 3);
+print a;
+
+print func2( 5, 10, 9);
+
+
+var a = fun () {
+
+};

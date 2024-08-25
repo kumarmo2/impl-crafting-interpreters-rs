@@ -321,7 +321,7 @@ impl Interpreter {
     fn evaluate_expression(
         &self,
         expression: &Expression,
-        env: Rc<RefCell<Environment>>,
+        env: Env,
     ) -> Result<Object, EvaluationError> {
         let val = match expression {
             Expression::NilLiteral => Object::Nil,
@@ -355,6 +355,8 @@ impl Interpreter {
                 println!("{}", val);
                 Object::Nil
             }
+            Expression::Function(_) => todo!(),
+            Expression::Call(_) => todo!(),
         };
         Ok(val)
     }
