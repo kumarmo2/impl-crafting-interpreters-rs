@@ -25,11 +25,11 @@ pub(crate) enum Expression {
         right_expr: Box<Expression>,
     },
     Function(FunctionExpression),
-    Call(Box<CallExpression>),
+    Call(CallExpression),
 }
 pub(crate) struct CallExpression {
-    pub(crate) callee: Expression,
-    arguments: Option<Vec<Expression>>,
+    pub(crate) callee: Box<Expression>,
+    pub(crate) arguments: Option<Vec<Expression>>,
 }
 
 pub(crate) struct FunctionExpression {
@@ -97,7 +97,19 @@ impl std::fmt::Debug for Expression {
 
                 Ok(())
             }
-            Expression::Call(_) => todo!(),
+            Expression::Call(CallExpression { callee, arguments }) => {
+                write!(f, "{callee:?}(", callee = callee.as_ref())?;
+                if let Some(args) = arguments {
+                    let args_count = args.len();
+                    for (index, arg) in args.iter().enumerate() {
+                        write!(f, "{arg:?}")?;
+                        if index != args_count - 1 {
+                            write!(f, ",")?;
+                        }
+                    }
+                }
+                write!(f, ")")
+            }
         }
     }
 }

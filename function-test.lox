@@ -1,11 +1,5 @@
-fun func1() {
-    print 5;
-}
-
-fun print_me(a) {
+fun take(a, b) {
     print a;
 }
 
-fun take(a, b) {
-
-}
+f();

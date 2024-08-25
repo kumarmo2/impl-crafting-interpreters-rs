@@ -104,6 +104,7 @@ impl Token {
                 Precedence::LessGreater
             }
             Token::BANGEQUAL | Token::EQUALEQUAL => Precedence::Equals,
+            Token::LParen => Precedence::Call,
             _ => Precedence::Lowest,
         }
     }
