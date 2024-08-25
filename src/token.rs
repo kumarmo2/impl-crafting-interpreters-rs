@@ -103,6 +103,7 @@ impl Token {
             Token::LESS | Token::GREATER | Token::LESSEQUAL | Token::GREATEREQUAL => {
                 Precedence::LessGreater
             }
+            Token::EQUAL => Precedence::Assign,
             Token::BANGEQUAL | Token::EQUALEQUAL => Precedence::Equals,
             _ => Precedence::Lowest,
         }

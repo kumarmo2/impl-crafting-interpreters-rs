@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 
 use bytes::Bytes;
-use expression::{
-    Assignment, Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop,
-};
+use expression::{Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop};
+use std::io::Write;
 
 use crate::token::{LexicalError, Scanner, Token, TokenIterator};
 pub(crate) mod expression;
@@ -186,11 +185,31 @@ impl Parser {
                     let expr = self.parse_infix_operator_expression(left_expr)?;
                     expr
                 }
+                Token::EQUAL => {
+                    // NOTE:  assignment is different from other infix operators as this is right associative.
+                    self.advance_token();
+                    self.parse_assignment_infix_expression(left_expr)?
+                }
                 t => unimplemented!("unimplemented for token: {}", t),
             }
         }
 
         Ok(left_expr)
+    }
+
+    fn parse_assignment_infix_expression(
+        &mut self,
+        left_expr: Expression,
+    ) -> ParseResult<Expression> {
+        self.advance_token();
+        let right_expr = self.parse_expression(Precedence::Lowest)?;
+        let mut stdout = std::io::stdout();
+
+        Ok(Expression::InfixExpression {
+            operator: Token::EQUAL,
+            left_expr: Box::new(left_expr),
+            right_expr: Box::new(right_expr),
+        })
     }
 
     fn ensure_semicolon_at_statement_end(&mut self) -> Result<(), ParseError> {
@@ -207,25 +226,6 @@ impl Parser {
                 });
             }
         }
-    }
-
-    fn parse_assignment(&mut self, ident_bytes: Bytes) -> Result<Statement, ParseError> {
-        self.advance_token();
-        let _ = match self.curr_token.clone() {
-            Token::EQUAL => self.advance_token(),
-            token => {
-                return Err(ParseError::ExpectedTokenNotFound {
-                    expected: "assignment",
-                    got: token,
-                    line: self.get_curr_line(),
-                })
-            }
-        };
-        let expr = self.parse_expression(Precedence::Lowest)?;
-        Ok(Statement::Assignment(Assignment {
-            expr,
-            identifier: ident_bytes,
-        }))
     }
 
     fn parse_var_declaration(&mut self) -> Result<Statement, ParseError> {
@@ -352,7 +352,7 @@ impl Parser {
                 Statement::Print(expr)
             }
             Token::Var => self.parse_var_declaration()?,
-            Token::Identifier(ident_bytes) => self.parse_assignment(ident_bytes.clone())?,
+            // Token::Identifier(ident_bytes) => self.parse_assignment(ident_bytes.clone())?,
             Token::If => {
                 return self.parse_if_statement();
             }
@@ -365,6 +365,7 @@ impl Parser {
 
     fn parse_single_statement(&mut self) -> Result<Statement, ParseError> {
         let stmt = self.parse_single_statement_without_semicolon()?;
+        // println!("stmt: {stmt:?}");
         match &stmt {
             Statement::IfStatement(_) | Statement::WhileLoop(_) | Statement::Block(_) => {
                 return Ok(stmt)

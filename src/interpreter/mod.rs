@@ -1,14 +1,12 @@
 #![allow(dead_code, unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{
     parser::{
-        expression::{
-            Assignment, Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop,
-        },
+        expression::{Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop},
         ParseError, Parser,
     },
     token::Token,
@@ -256,6 +254,27 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_assignment_infix_expression(
+        &self,
+        left_expr: &Expression,
+        right_expr: &Expression,
+        env: Env,
+    ) -> Result<Object, EvaluationError> {
+        let ident_bytes = match left_expr {
+            Expression::Ident(ident_bytes) => ident_bytes,
+            expr => {
+                return Err(EvaluationError::Adhoc(format!(
+                    "expected expression but got {expr:?}"
+                )))
+            }
+        };
+        let value = self.evaluate_expression(right_expr, env.clone())?;
+        env.as_ref()
+            .borrow_mut()
+            .assign(ident_bytes.clone(), value.clone());
+        Ok(value)
+    }
+
     fn evaluate_infix_expression(
         &self,
         operator: Token,
@@ -263,6 +282,9 @@ impl Interpreter {
         right_expr: &Expression,
         env: Rc<RefCell<Environment>>,
     ) -> Result<Object, EvaluationError> {
+        if let Token::EQUAL = operator {
+            return self.evaluate_assignment_infix_expression(left_expr, right_expr, env);
+        }
         if let Token::And = operator {
             return self.evaluate_and_expression(left_expr, right_expr, env);
         }
@@ -392,15 +414,15 @@ impl Interpreter {
                         .add(identifier.clone(), Object::Nil);
                 }
             }
-            Statement::Assignment(Assignment { identifier, expr }) => {
-                if !env.as_ref().borrow().is_declared(identifier) {
-                    return Err(EvaluationError::UndefinedVariable {
-                        identifier: identifier.clone(),
-                    });
-                }
-                let val = self.evaluate_expression(expr, env.clone())?;
-                env.as_ref().borrow_mut().assign(identifier.clone(), val);
-            }
+            // Statement::Assignment(Assignment { identifier, expr }) => {
+            //     if !env.as_ref().borrow().is_declared(identifier) {
+            //         return Err(EvaluationError::UndefinedVariable {
+            //             identifier: identifier.clone(),
+            //         });
+            //     }
+            //     let val = self.evaluate_expression(expr, env.clone())?;
+            //     env.as_ref().borrow_mut().assign(identifier.clone(), val);
+            // }
             Statement::Block(stmts) => {
                 let child_env = Rc::new(RefCell::new(Environment {
                     values: HashMap::new(),
