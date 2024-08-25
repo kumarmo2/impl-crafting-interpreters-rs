@@ -301,7 +301,7 @@ impl Parser {
         let var_declaration: Option<Statement>;
         let conditional_expr: Option<Expression>;
         let incr_stmt: Option<Statement>;
-        let mut block_body: Statement;
+        let block_body: Statement;
         if let Token::SEMICOLON = self.curr_token {
             self.advance_token();
             var_declaration = None;

@@ -11,6 +11,9 @@ pub(crate) mod interpreter;
 pub(crate) mod parser;
 pub(crate) mod token;
 
+#[cfg(test)]
+pub(crate) mod tests;
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
