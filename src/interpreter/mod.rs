@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_variables)]
 
-use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, io::Write, ops::Deref, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -92,7 +92,11 @@ impl Environment {
     }
 }
 
-pub(crate) struct Interpreter {
+pub(crate) struct Interpreter<W>
+where
+    W: Write,
+{
+    writer: W,
     parser: Parser,
 }
 
@@ -136,99 +140,96 @@ impl std::fmt::Debug for EvaluationError {
         }
     }
 }
+fn evaluate_string_infix_operation(
+    operator: Token,
+    left: &Bytes,
+    right: &Bytes,
+) -> Result<Object, EvaluationError> {
+    match operator.clone() {
+        Token::PLUS => {
+            let mut buf = BytesMut::with_capacity(left.len() + right.len());
+            buf.put(left.as_ref());
+            buf.put(right.as_ref());
+            let bytes = buf.freeze();
+            Ok(Object::String(bytes))
+        }
+        Token::EQUALEQUAL => {
+            let left = unsafe { std::str::from_utf8_unchecked(left.as_ref()) };
+            let right = unsafe { std::str::from_utf8_unchecked(right.as_ref()) };
+            Ok(Object::Boolean(left == right))
+        }
+        Token::BANGEQUAL => {
+            let left = unsafe { std::str::from_utf8_unchecked(left.as_ref()) };
+            let right = unsafe { std::str::from_utf8_unchecked(right.as_ref()) };
+            Ok(Object::Boolean(left != right))
+        }
+        token => Err(EvaluationError::InvalidOperation {
+            left: Object::String(left.clone()),
+            operator,
+            right: Object::String(right.clone()),
+        }),
+    }
+}
+fn evaluate_numeric_infix_operation(operator: Token, left_value: f64, right_value: f64) -> Object {
+    match operator {
+        Token::STAR => Object::Number(left_value * right_value),
+        Token::SLASH => Object::Number(left_value / right_value),
+        Token::PLUS => Object::Number(left_value + right_value),
+        Token::MINUS => Object::Number(left_value - right_value),
+        Token::EQUALEQUAL => Object::Boolean(left_value == right_value),
+        Token::BANGEQUAL => Object::Boolean(left_value != right_value),
+        Token::LESS => Object::Boolean(left_value < right_value),
+        Token::LESSEQUAL => Object::Boolean(left_value <= right_value),
+        Token::GREATER => Object::Boolean(left_value > right_value),
+        Token::GREATEREQUAL => Object::Boolean(left_value >= right_value),
+        token => unimplemented!("{token}"),
+    }
+}
 
-impl Interpreter {
-    pub(crate) fn from_source(source: String) -> Result<Self, ParseError> {
+fn evaluate_infix_expression_for_different_types_of_operands(
+    operator: Token,
+    left: &Object,
+    right: &Object,
+) -> Result<Object, EvaluationError> {
+    match operator {
+        Token::EQUALEQUAL => match (left, right) {
+            (Object::Nil, Object::Nil) => Ok(Object::Boolean(true)),
+            _ => Ok(Object::Boolean(false)),
+        },
+        Token::BANGEQUAL => Ok(Object::Boolean(true)),
+        Token::PLUS
+        | Token::MINUS
+        | Token::SLASH
+        | Token::STAR
+        | Token::LESS
+        | Token::LESSEQUAL
+        | Token::GREATER
+        | Token::GREATEREQUAL => Err(EvaluationError::Adhoc(format!(
+            "Error: Operands must be numbers." // TODO: need to print the line number as well.
+        ))),
+        _ => Err(EvaluationError::InvalidOperation {
+            left: left.clone(),
+            operator: operator,
+            right: right.clone(),
+        }),
+    }
+}
+impl<W> Interpreter<W>
+where
+    W: Write,
+{
+    pub(crate) fn from_source(source: String, writer: W) -> Result<Self, ParseError> {
         let parser = Parser::from_source(source)?;
 
         Ok(Self {
+            writer,
             parser,
             // global_env: Environment::default(),
         })
     }
 
-    fn evaluate_string_infix_operation(
-        operator: Token,
-        left: &Bytes,
-        right: &Bytes,
-    ) -> Result<Object, EvaluationError> {
-        match operator.clone() {
-            Token::PLUS => {
-                let mut buf = BytesMut::with_capacity(left.len() + right.len());
-                buf.put(left.as_ref());
-                buf.put(right.as_ref());
-                let bytes = buf.freeze();
-                Ok(Object::String(bytes))
-            }
-            Token::EQUALEQUAL => {
-                let left = unsafe { std::str::from_utf8_unchecked(left.as_ref()) };
-                let right = unsafe { std::str::from_utf8_unchecked(right.as_ref()) };
-                Ok(Object::Boolean(left == right))
-            }
-            Token::BANGEQUAL => {
-                let left = unsafe { std::str::from_utf8_unchecked(left.as_ref()) };
-                let right = unsafe { std::str::from_utf8_unchecked(right.as_ref()) };
-                Ok(Object::Boolean(left != right))
-            }
-            token => Err(EvaluationError::InvalidOperation {
-                left: Object::String(left.clone()),
-                operator,
-                right: Object::String(right.clone()),
-            }),
-        }
-    }
-
-    fn evaluate_numeric_infix_operation(
-        operator: Token,
-        left_value: f64,
-        right_value: f64,
-    ) -> Object {
-        match operator {
-            Token::STAR => Object::Number(left_value * right_value),
-            Token::SLASH => Object::Number(left_value / right_value),
-            Token::PLUS => Object::Number(left_value + right_value),
-            Token::MINUS => Object::Number(left_value - right_value),
-            Token::EQUALEQUAL => Object::Boolean(left_value == right_value),
-            Token::BANGEQUAL => Object::Boolean(left_value != right_value),
-            Token::LESS => Object::Boolean(left_value < right_value),
-            Token::LESSEQUAL => Object::Boolean(left_value <= right_value),
-            Token::GREATER => Object::Boolean(left_value > right_value),
-            Token::GREATEREQUAL => Object::Boolean(left_value >= right_value),
-            token => unimplemented!("{token}"),
-        }
-    }
-
-    fn evaluate_infix_expression_for_different_types_of_operands(
-        operator: Token,
-        left: &Object,
-        right: &Object,
-    ) -> Result<Object, EvaluationError> {
-        match operator {
-            Token::EQUALEQUAL => match (left, right) {
-                (Object::Nil, Object::Nil) => Ok(Object::Boolean(true)),
-                _ => Ok(Object::Boolean(false)),
-            },
-            Token::BANGEQUAL => Ok(Object::Boolean(true)),
-            Token::PLUS
-            | Token::MINUS
-            | Token::SLASH
-            | Token::STAR
-            | Token::LESS
-            | Token::LESSEQUAL
-            | Token::GREATER
-            | Token::GREATEREQUAL => Err(EvaluationError::Adhoc(format!(
-                "Error: Operands must be numbers." // TODO: need to print the line number as well.
-            ))),
-            _ => Err(EvaluationError::InvalidOperation {
-                left: left.clone(),
-                operator: operator,
-                right: right.clone(),
-            }),
-        }
-    }
-
     fn evaluate_and_expression(
-        &self,
+        &mut self,
         left_expr: &Expression,
         right_expr: &Expression,
         env: Env,
@@ -241,7 +242,7 @@ impl Interpreter {
         }
     }
     fn evaluate_or_expression(
-        &self,
+        &mut self,
         left_expr: &Expression,
         right_expr: &Expression,
         env: Env,
@@ -255,7 +256,7 @@ impl Interpreter {
     }
 
     fn evaluate_assignment_infix_expression(
-        &self,
+        &mut self,
         left_expr: &Expression,
         right_expr: &Expression,
         env: Env,
@@ -276,7 +277,7 @@ impl Interpreter {
     }
 
     fn evaluate_infix_expression(
-        &self,
+        &mut self,
         operator: Token,
         left_expr: &Expression,
         right_expr: &Expression,
@@ -294,11 +295,11 @@ impl Interpreter {
         let left_value = self.evaluate_expression(left_expr, env.clone())?;
         let right_value = self.evaluate_expression(right_expr, env.clone())?;
         match (&left_value, &right_value) {
-            (Object::Number(left), Object::Number(right)) => Ok(
-                Interpreter::evaluate_numeric_infix_operation(operator, *left, *right),
-            ),
+            (Object::Number(left), Object::Number(right)) => {
+                Ok(evaluate_numeric_infix_operation(operator, *left, *right))
+            }
             (Object::String(left), Object::String(right)) => {
-                Interpreter::evaluate_string_infix_operation(operator, left, right)
+                evaluate_string_infix_operation(operator, left, right)
             }
             (Object::Boolean(left), Object::Boolean(right)) => match operator.clone() {
                 Token::EQUALEQUAL => Ok(Object::Boolean(*left == *right)),
@@ -309,7 +310,7 @@ impl Interpreter {
                     right: right_value,
                 }),
             },
-            _ => Interpreter::evaluate_infix_expression_for_different_types_of_operands(
+            _ => evaluate_infix_expression_for_different_types_of_operands(
                 operator,
                 &left_value,
                 &right_value,
@@ -318,7 +319,7 @@ impl Interpreter {
     }
 
     fn evaluate_prefix_expression(
-        &self,
+        &mut self,
         operator: Token,
         expression: &Expression,
         env: Rc<RefCell<Environment>>,
@@ -341,7 +342,7 @@ impl Interpreter {
     }
 
     fn evaluate_expression(
-        &self,
+        &mut self,
         expression: &Expression,
         env: Rc<RefCell<Environment>>,
     ) -> Result<Object, EvaluationError> {
@@ -374,7 +375,7 @@ impl Interpreter {
             )?,
             Expression::Print(e) => {
                 let val = self.evaluate_expression(e.as_ref(), env.clone())?;
-                println!("{}", val);
+                let _ = writeln!(self.writer, "{}", val);
                 Object::Nil
             }
         };
@@ -392,7 +393,7 @@ impl Interpreter {
     }
 
     pub(crate) fn evaluate_stmt(
-        &self,
+        &mut self,
         stmt: &Statement,
         env: Rc<RefCell<Environment>>,
     ) -> Result<(), EvaluationError> {
@@ -402,7 +403,7 @@ impl Interpreter {
             }
             Statement::Print(e) => {
                 let val = self.evaluate_expression(e, env)?;
-                println!("{}", val);
+                let _ = writeln!(self.writer, "{}", val);
             }
             Statement::VarDeclaration(VarDeclaration { identifier, expr }) => {
                 if let Some(expr) = expr {
@@ -442,7 +443,7 @@ impl Interpreter {
         Ok(())
     }
     fn evaluate_while_statement(
-        &self,
+        &mut self,
         while_loop: &WhileLoop,
         env: Env,
     ) -> Result<(), EvaluationError> {
@@ -461,7 +462,7 @@ impl Interpreter {
         Ok(())
     }
     fn evaluate_if_statement(
-        &self,
+        &mut self,
         if_statement: &IfStatement,
         env: Env,
     ) -> Result<(), EvaluationError> {
@@ -474,6 +475,10 @@ impl Interpreter {
             self.evaluate_stmt(else_block, env.clone())?;
         }
         Ok(())
+    }
+
+    pub(crate) fn writer(&self) -> &W {
+        &self.writer
     }
 
     pub(crate) fn evaluate_program(&mut self) -> Result<(), EvaluationError> {

@@ -81,7 +81,8 @@ fn main() {
         }
         "evaluate" => {
             let file_contents = read_contents();
-            let mut interpreter = match Interpreter::from_source(file_contents) {
+            let stdout = std::io::stdout();
+            let mut interpreter = match Interpreter::from_source(file_contents, stdout) {
                 Ok(interpreter) => interpreter,
                 Err(e) => {
                     eprintln!("{:?}", e);
@@ -119,7 +120,7 @@ fn main() {
         }
         "evaluate-program" => {
             let source = read_contents();
-            let mut interpreter = match Interpreter::from_source(source) {
+            let mut interpreter = match Interpreter::from_source(source, std::io::stdout()) {
                 Ok(i) => i,
                 Err(e) => {
                     eprintln!("{:?}", e);

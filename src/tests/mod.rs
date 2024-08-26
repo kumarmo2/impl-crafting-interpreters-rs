@@ -1,12 +1,16 @@
 use core::panic;
 
 use crate::{
+    interpreter::Interpreter,
     parser::{
         expression::{Expression, Statement},
         Parser,
     },
     token::Scanner,
 };
+
+#[cfg(test)]
+mod interpreter;
 
 #[test]
 fn it_works() {
@@ -58,6 +62,15 @@ fn scanning_keywords_positive_tests() {
     scanning_test_from_source(source);
 }
 
+#[test]
+fn basic_print_test() {
+    let source = "print \"kumarmo2\";".to_string();
+    let writer = vec![];
+    let mut interpreter = Interpreter::from_source(source, writer).unwrap();
+    interpreter.evaluate_program().unwrap();
+    assert_eq!(interpreter.writer(), b"kumarmo2\n");
+}
+
 fn scanning_test_from_source(source: &str) {
     let (source, expects) = source.split_once("\n\n").unwrap();
     let expect_lines = expects
@@ -76,4 +89,3 @@ fn scanning_test_from_source(source: &str) {
         assert_eq!(dbg_print, expect);
     }
 }
-
