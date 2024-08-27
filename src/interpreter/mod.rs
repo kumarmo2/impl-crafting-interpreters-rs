@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, io::Write, ops::Deref, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -270,6 +270,11 @@ where
             }
         };
         let value = self.evaluate_expression(right_expr, env.clone())?;
+        if !env.as_ref().borrow().is_declared(ident_bytes.as_ref()) {
+            return Err(EvaluationError::UndefinedVariable {
+                identifier: ident_bytes.clone(),
+            });
+        }
         env.as_ref()
             .borrow_mut()
             .assign(ident_bytes.clone(), value.clone());
@@ -399,7 +404,7 @@ where
     ) -> Result<(), EvaluationError> {
         match stmt {
             Statement::Expression(e) => {
-                let _ = self.evaluate_expression(e, env);
+                self.evaluate_expression(e, env)?;
             }
             Statement::Print(e) => {
                 let val = self.evaluate_expression(e, env)?;
@@ -415,15 +420,6 @@ where
                         .add(identifier.clone(), Object::Nil);
                 }
             }
-            // Statement::Assignment(Assignment { identifier, expr }) => {
-            //     if !env.as_ref().borrow().is_declared(identifier) {
-            //         return Err(EvaluationError::UndefinedVariable {
-            //             identifier: identifier.clone(),
-            //         });
-            //     }
-            //     let val = self.evaluate_expression(expr, env.clone())?;
-            //     env.as_ref().borrow_mut().assign(identifier.clone(), val);
-            // }
             Statement::Block(stmts) => {
                 let child_env = Rc::new(RefCell::new(Environment {
                     values: HashMap::new(),

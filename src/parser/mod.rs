@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 
-use bytes::Bytes;
 use expression::{Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop};
-use std::io::Write;
 
 use crate::token::{LexicalError, Scanner, Token, TokenIterator};
 pub(crate) mod expression;
@@ -24,6 +22,7 @@ pub(crate) enum ParseError {
         line: u32,
     },
     UnmatchedParentheses,
+    InvalidAssignmentTarget,
 }
 
 impl std::fmt::Debug for ParseError {
@@ -38,6 +37,9 @@ impl std::fmt::Debug for ParseError {
                 expected,
             } => write!(f, "[line {line}] Error at '{got}': expect {expected}"),
             ParseError::UnmatchedParentheses => write!(f, "Error: Unmatched parentheses."),
+            ParseError::InvalidAssignmentTarget => {
+                write!(f, "Error at '=': Invalid assignment target.")
+            }
         }
     }
 }
@@ -202,8 +204,11 @@ impl Parser {
         left_expr: Expression,
     ) -> ParseResult<Expression> {
         self.advance_token();
+        match &left_expr {
+            Expression::Ident(_) => (),
+            _ => return Err(ParseError::InvalidAssignmentTarget),
+        };
         let right_expr = self.parse_expression(Precedence::Lowest)?;
-        let mut stdout = std::io::stdout();
 
         Ok(Expression::InfixExpression {
             operator: Token::EQUAL,
