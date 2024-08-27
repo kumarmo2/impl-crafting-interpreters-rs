@@ -150,10 +150,7 @@ impl Parser {
                 let expr = self.parse_expression(precendence.clone())?;
                 Expression::Print(Box::new(expr))
             }
-            Token::Nil => {
-                self.advance_token();
-                Expression::NilLiteral
-            }
+            Token::Nil => Expression::NilLiteral,
             t => {
                 return Err(ParseError::ExpectedTokenNotFound {
                     expected: "expression",
@@ -357,10 +354,7 @@ impl Parser {
                 Statement::Print(expr)
             }
             Token::Var => self.parse_var_declaration()?,
-            // Token::Identifier(ident_bytes) => self.parse_assignment(ident_bytes.clone())?,
-            Token::If => {
-                return self.parse_if_statement();
-            }
+            Token::If => return self.parse_if_statement(),
             Token::While => return self.parse_while_statement(),
             Token::For => self.parse_for_statement_and_desugar_it()?,
             _ => Statement::Expression(self.parse_expression(Precedence::Lowest)?),
@@ -370,7 +364,6 @@ impl Parser {
 
     fn parse_single_statement(&mut self) -> Result<Statement, ParseError> {
         let stmt = self.parse_single_statement_without_semicolon()?;
-        // println!("stmt: {stmt:?}");
         match &stmt {
             Statement::IfStatement(_) | Statement::WhileLoop(_) | Statement::Block(_) => {
                 return Ok(stmt)

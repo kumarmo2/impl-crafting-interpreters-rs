@@ -106,7 +106,7 @@ pub(crate) enum EvaluationError {
         expected: &'static str,
         got: Object,
     },
-    Adhoc(String),
+    Runtime(String),
     InvalidOperation {
         left: Object,
         operator: Token,
@@ -132,7 +132,7 @@ impl std::fmt::Debug for EvaluationError {
                 f,
                 "InvalidOperation: {operator}, left: {left}, right: {right}"
             ),
-            EvaluationError::Adhoc(str) => write!(f, "{str}"),
+            EvaluationError::Runtime(str) => write!(f, "runtime error: {str}"),
             EvaluationError::UndefinedVariable { identifier } => {
                 let ident = unsafe { std::str::from_utf8_unchecked(identifier) };
                 write!(f, "undefined variable '{ident}'")
@@ -197,14 +197,18 @@ fn evaluate_infix_expression_for_different_types_of_operands(
             _ => Ok(Object::Boolean(false)),
         },
         Token::BANGEQUAL => Ok(Object::Boolean(true)),
-        Token::PLUS
-        | Token::MINUS
+        Token::PLUS => {
+            return Err(EvaluationError::Runtime(format!(
+                "Operands must be two numbers or two strings."
+            )))
+        }
+        Token::MINUS
         | Token::SLASH
         | Token::STAR
         | Token::LESS
         | Token::LESSEQUAL
         | Token::GREATER
-        | Token::GREATEREQUAL => Err(EvaluationError::Adhoc(format!(
+        | Token::GREATEREQUAL => Err(EvaluationError::Runtime(format!(
             "Error: Operands must be numbers." // TODO: need to print the line number as well.
         ))),
         _ => Err(EvaluationError::InvalidOperation {
@@ -264,7 +268,7 @@ where
         let ident_bytes = match left_expr {
             Expression::Ident(ident_bytes) => ident_bytes,
             expr => {
-                return Err(EvaluationError::Adhoc(format!(
+                return Err(EvaluationError::Runtime(format!(
                     "expected expression but got {expr:?}"
                 )))
             }
@@ -335,7 +339,7 @@ where
             Token::MINUS => match value {
                 Object::Number(v) => Object::Number(-v),
                 object => {
-                    return Err(EvaluationError::Adhoc(format!(
+                    return Err(EvaluationError::Runtime(format!(
                         "Error: Operand must be a number.\n[line {}]",
                         self.parser.get_curr_line()
                     )))
