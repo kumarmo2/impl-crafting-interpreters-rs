@@ -117,14 +117,15 @@ impl std::fmt::Debug for Expression {
 #[derive(Clone)]
 pub(crate) enum Precedence {
     Lowest = 1,
-    Equals = 2,
-    Or = 3,
-    And = 4,
-    LessGreater = 5,
-    Sum = 6,
-    Product = 7,
-    Prefix = 8,
-    Call = 9,
+    Assign = 2,
+    Equals = 3,
+    Or = 4,
+    And = 5,
+    LessGreater = 6,
+    Sum = 7,
+    Product = 8,
+    Prefix = 9,
+    Call = 10,
 }
 
 impl Precedence {
@@ -138,10 +139,10 @@ pub(crate) struct VarDeclaration {
     pub(crate) expr: Option<Expression>,
 }
 
-pub(crate) struct Assignment {
-    pub(crate) identifier: Bytes,
-    pub(crate) expr: Expression,
-}
+// pub(crate) struct Assignment {
+//     pub(crate) identifier: Bytes,
+//     pub(crate) expr: Expression,
+// }
 
 pub(crate) struct IfStatement {
     pub(crate) expr: Expression,
@@ -158,7 +159,7 @@ pub(crate) enum Statement {
     Expression(Expression),
     Print(Expression),
     VarDeclaration(VarDeclaration),
-    Assignment(Assignment),
+    // Assignment(Assignment),
     Block(Vec<Box<Statement>>),
     IfStatement(Box<IfStatement>),
     WhileLoop(WhileLoop),
@@ -202,10 +203,10 @@ impl std::fmt::Debug for Statement {
                     None => write!(f, "var {};", identifier),
                 }
             }
-            Statement::Assignment(Assignment { identifier, expr }) => {
-                let identifier = unsafe { std::str::from_utf8_unchecked(identifier.as_ref()) };
-                write!(f, "{identifier} = {:?}", expr)
-            }
+            // Statement::Assignment(Assignment { identifier, expr }) => {
+            //     let identifier = unsafe { std::str::from_utf8_unchecked(identifier.as_ref()) };
+            //     write!(f, "{identifier} = {:?}", expr)
+            // }
             Statement::Block(statements) => {
                 // println!("debug printing block statements");
                 write!(f, "{{\n")?;
