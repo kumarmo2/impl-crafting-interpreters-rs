@@ -257,8 +257,13 @@ impl Parser {
             0 => None,
             _ => Some(params),
         };
+        let stmts = if let Statement::Block(stmts) = body {
+            stmts
+        } else {
+            unreachable!();
+        };
         Ok(Expression::Function(FunctionExpression {
-            body: Box::new(body),
+            body: stmts,
             parameters: params,
             name,
         }))
@@ -284,7 +289,6 @@ impl Parser {
             }
             Token::Fun => {
                 let fn_expr = self.parse_function_expression()?;
-                println!("> after parsing FunctionExpression, curr_token: {curr_token}, peek_token: {peek_token}", curr_token = self.curr_token, peek_token = self.peek_token);
                 fn_expr
             }
             Token::Nil => Expression::NilLiteral,
@@ -469,21 +473,21 @@ impl Parser {
             block_body = self.parse_statement()?;
         }
 
-        let mut final_block_stmts = Vec::<Box<Statement>>::new();
+        let mut final_block_stmts = Vec::<Statement>::new();
         if let Some(v) = var_declaration {
-            final_block_stmts.push(Box::new(v));
+            final_block_stmts.push(v);
         }
 
-        let mut while_block_body: Vec<Box<Statement>> = vec![Box::new(block_body)];
+        let mut while_block_body: Vec<Statement> = vec![block_body];
 
         if let Some(v) = incr_stmt {
-            while_block_body.push(Box::new(v));
+            while_block_body.push(v);
         }
         let while_loop = Statement::WhileLoop(WhileLoop {
             expr: conditional_expr,
             block: Box::new(Statement::Block(while_block_body)),
         });
-        final_block_stmts.push(Box::new(while_loop));
+        final_block_stmts.push(while_loop);
         Ok(Statement::Block(final_block_stmts))
     }
 
@@ -527,7 +531,7 @@ impl Parser {
         is_block_part_of_expression: bool,
     ) -> Result<Statement, ParseError> {
         self.advance_token();
-        let mut stms: Vec<Box<Statement>> = vec![];
+        let mut stms: Vec<Statement> = vec![];
         loop {
             if let Token::RBrace = self.curr_token {
                 if !is_block_part_of_expression {
@@ -536,27 +540,14 @@ impl Parser {
                 break;
             }
             let stmt = self.parse_statement()?;
-            stms.push(Box::new(stmt));
+            stms.push(stmt);
         }
         Ok(Statement::Block(stms))
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         let stmt = match &self.curr_token {
-            Token::LBrace => {
-                self.parse_block_statement(false)?
-                // self.advance_token();
-                // let mut stms: Vec<Box<Statement>> = vec![];
-                // loop {
-                //     if let Token::RBrace = self.curr_token {
-                //         self.advance_token();
-                //         break;
-                //     }
-                //     let stmt = self.parse_statement()?;
-                //     stms.push(Box::new(stmt));
-                // }
-                // Statement::Block(stms)
-            }
+            Token::LBrace => self.parse_block_statement(false)?,
             _ => self.parse_single_statement()?,
         };
         Ok(stmt)

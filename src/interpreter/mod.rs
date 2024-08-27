@@ -432,7 +432,7 @@ where
                     parent_env: Some(env.clone()),
                 }));
                 for stmt in stmts.iter() {
-                    self.evaluate_stmt(stmt.as_ref(), child_env.clone())?;
+                    self.evaluate_stmt(&stmt, child_env.clone())?;
                 }
             }
             Statement::IfStatement(if_statement) => {

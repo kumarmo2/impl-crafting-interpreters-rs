@@ -35,7 +35,7 @@ pub(crate) struct CallExpression {
 pub(crate) struct FunctionExpression {
     pub(crate) name: Option<Token>,
     pub(crate) parameters: Option<Vec<Token>>,
-    pub(crate) body: Box<Statement>,
+    pub(crate) body: Vec<Statement>,
 }
 
 impl std::fmt::Debug for Expression {
@@ -160,7 +160,7 @@ pub(crate) enum Statement {
     Print(Expression),
     VarDeclaration(VarDeclaration),
     // Assignment(Assignment),
-    Block(Vec<Box<Statement>>),
+    Block(Vec<Statement>),
     IfStatement(Box<IfStatement>),
     WhileLoop(WhileLoop),
 }
@@ -170,10 +170,10 @@ impl Statement {
         &self,
         f: &mut std::fmt::Formatter<'_>,
         prefix_whitespace: &str,
-        statements: &Vec<Box<Statement>>,
+        statements: &Vec<Statement>,
     ) -> std::fmt::Result {
         for stmt in statements.iter() {
-            match stmt.as_ref() {
+            match &stmt {
                 Statement::Block(stms) => {
                     write!(f, "{prefix_whitespace}{{\n")?;
                     let _ =
@@ -203,12 +203,7 @@ impl std::fmt::Debug for Statement {
                     None => write!(f, "var {};", identifier),
                 }
             }
-            // Statement::Assignment(Assignment { identifier, expr }) => {
-            //     let identifier = unsafe { std::str::from_utf8_unchecked(identifier.as_ref()) };
-            //     write!(f, "{identifier} = {:?}", expr)
-            // }
             Statement::Block(statements) => {
-                // println!("debug printing block statements");
                 write!(f, "{{\n")?;
                 self.print_statements(f, "  ", statements)?;
                 write!(f, "}}")?;

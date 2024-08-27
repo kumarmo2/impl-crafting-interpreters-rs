@@ -6,3 +6,6 @@ mod bool_tests;
 
 #[cfg(test)]
 mod operator;
+
+#[cfg(test)]
+mod while_tests;
