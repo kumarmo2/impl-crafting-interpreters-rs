@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use bytes::Bytes;
 
 use crate::token::Token;
@@ -24,7 +26,7 @@ pub(crate) enum Expression {
         left_expr: Box<Expression>,
         right_expr: Box<Expression>,
     },
-    Function(FunctionExpression),
+    Function(Rc<FunctionExpression>),
     Call(CallExpression),
 }
 pub(crate) struct CallExpression {
@@ -32,6 +34,7 @@ pub(crate) struct CallExpression {
     pub(crate) arguments: Option<Vec<Expression>>,
 }
 
+#[derive(Debug)]
 pub(crate) struct FunctionExpression {
     pub(crate) name: Option<Token>,
     pub(crate) parameters: Option<Vec<Token>>,
@@ -61,11 +64,12 @@ impl std::fmt::Debug for Expression {
                 std::str::from_utf8_unchecked(ident_bytes.as_ref())
             }),
             Expression::Print(e) => write!(f, "print {:?}", e.as_ref()),
-            Expression::Function(FunctionExpression {
-                name,
-                parameters,
-                body,
-            }) => {
+            Expression::Function(fe) => {
+                let FunctionExpression {
+                    name,
+                    parameters,
+                    body,
+                } = fe.as_ref();
                 write!(f, "fun")?;
                 match name {
                     Some(name) => match name {

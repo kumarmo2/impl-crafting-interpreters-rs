@@ -6,7 +6,10 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{
     parser::{
-        expression::{Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop},
+        expression::{
+            CallExpression, Expression, FunctionExpression, IfStatement, Precedence, Statement,
+            VarDeclaration, WhileLoop,
+        },
         ParseError, Parser,
     },
     token::Token,
@@ -17,6 +20,7 @@ pub(crate) enum Object {
     Number(f64),
     Boolean(bool),
     String(Bytes),
+    Function(Rc<FunctionExpression>),
     Nil,
 }
 
@@ -27,6 +31,7 @@ impl Object {
             Object::Boolean(v) => *v,
             Object::String(_) => true,
             Object::Nil => false,
+            Object::Function(_) => true,
         }
     }
 }
@@ -41,6 +46,8 @@ impl std::fmt::Display for Object {
                 let str = unsafe { std::str::from_utf8_unchecked(bytes.as_ref()) };
                 write!(f, "{}", str)
             }
+            // TODO: implement this to make the output readable.
+            Object::Function(fe) => write!(f, "{fe:?}"),
         }
     }
 }
@@ -50,10 +57,16 @@ type Env = Rc<RefCell<Environment>>;
 #[derive(Default, Debug)]
 pub(crate) struct Environment {
     values: HashMap<Bytes, Object>,
-    parent_env: Option<Env>, // 'p_env >= 'env
+    parent_env: Option<Env>,
 }
 
 impl Environment {
+    pub(crate) fn with_parent(parent: Env) -> Self {
+        Self {
+            values: HashMap::default(),
+            parent_env: Some(parent),
+        }
+    }
     pub(crate) fn add(&mut self, key: Bytes, val: Object) -> Option<Object> {
         self.values.insert(key, val)
     }
@@ -387,10 +400,70 @@ where
                 let _ = writeln!(self.writer, "{}", val);
                 Object::Nil
             }
-            Expression::Function(_) => todo!(),
-            Expression::Call(_) => todo!(),
+            Expression::Function(fe) => {
+                self.evaluate_funtion_expression(fe.clone(), env.clone())?
+            }
+            Expression::Call(ce) => self.evaluate_function_call(ce, env.clone())?,
         };
         Ok(val)
+    }
+
+    fn evaluate_function_call(
+        &mut self,
+        call_expr: &CallExpression,
+        env: Env,
+    ) -> Result<Object, EvaluationError> {
+        let func_expr = match self.evaluate_expression(call_expr.callee.as_ref(), env.clone())? {
+            Object::Function(fe) => fe,
+            expr => {
+                return Err(EvaluationError::Runtime(format!(
+                    "Callee must be a function"
+                )))
+            }
+        };
+        let arguments_count = call_expr
+            .arguments
+            .as_ref()
+            .and_then(|args| Some(args.len()))
+            .unwrap_or_else(|| 0);
+
+        let parameter_count = func_expr
+            .as_ref()
+            .parameters
+            .as_ref()
+            .and_then(|args| Some(args.len()))
+            .unwrap_or_else(|| 0);
+
+        if arguments_count != parameter_count {
+            return Err(EvaluationError::Runtime(format!(
+                "arguments_count mismatch"
+            )));
+        }
+        let child_env = Rc::new(RefCell::new(Environment::with_parent(env.clone())));
+        if arguments_count == 0 {
+            for (index, stmt) in func_expr.body.iter().enumerate() {
+                self.evaluate_stmt(stmt, child_env.clone())?;
+            }
+        }
+        //TODO: add the support for return stmt and returning a value from a function also.
+        //For now, the function will always return a nil.
+        Ok(Object::Nil)
+    }
+
+    fn evaluate_funtion_expression(
+        &self,
+        fe: Rc<FunctionExpression>,
+        env: Env,
+    ) -> Result<Object, EvaluationError> {
+        if let Some(name_token) = fe.as_ref().name.as_ref() {
+            if let Some(name_bytes) = name_token.get_bytes() {
+                // add in the environment.
+                env.as_ref()
+                    .borrow_mut()
+                    .add(name_bytes.clone(), Object::Function(fe.clone()));
+            }
+        }
+        Ok(Object::Function(fe))
     }
 
     pub(crate) fn evaluate(&mut self) -> Result<Object, EvaluationError> {

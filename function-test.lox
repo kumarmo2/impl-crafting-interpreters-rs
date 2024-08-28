@@ -1,5 +1,10 @@
-fun take(a, b) {
-    print a;
+fun take() {
+    print 5 + 1;
 }
 
-f();
+take();
+
+fun () {
+    print "iifee called";
+}();
+

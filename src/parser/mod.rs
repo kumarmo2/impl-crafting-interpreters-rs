@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::rc::Rc;
+
 use expression::{
     CallExpression, Expression, FunctionExpression, IfStatement, Precedence, Statement,
     VarDeclaration, WhileLoop,
@@ -139,14 +141,9 @@ impl Parser {
 
     #[allow(unused_variables)]
     fn parse_call_expression(&mut self, left_expr: Expression) -> ParseResult<Expression> {
-        println!(
-            "inside parse_call_expression, curr_token: {curr_token}, left_expr: {left_expr:?}",
-            curr_token = self.curr_token
-        );
         self.advance_token();
         let mut args: Vec<Expression> = vec![];
         loop {
-            println!("!!! curr_token: '{token}'", token = self.curr_token);
             if let Token::RParen = &self.curr_token {
                 // self.advance_token();
                 break;
@@ -262,11 +259,11 @@ impl Parser {
         } else {
             unreachable!();
         };
-        Ok(Expression::Function(FunctionExpression {
+        Ok(Expression::Function(Rc::new(FunctionExpression {
             body: stmts,
             parameters: params,
             name,
-        }))
+        })))
     }
 
     #[allow(unused_variables)]
