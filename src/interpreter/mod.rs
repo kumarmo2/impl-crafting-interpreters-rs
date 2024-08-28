@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
+use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -427,7 +427,7 @@ where
             .and_then(|args| Some(args.len()))
             .unwrap_or_else(|| 0);
 
-        let parameter_count = func_expr
+        let mut parameter_count = func_expr
             .as_ref()
             .parameters
             .as_ref()
@@ -440,10 +440,24 @@ where
             )));
         }
         let child_env = Rc::new(RefCell::new(Environment::with_parent(env.clone())));
-        if arguments_count == 0 {
-            for (index, stmt) in func_expr.body.iter().enumerate() {
-                self.evaluate_stmt(stmt, child_env.clone())?;
+        if arguments_count != 0 {
+            let mut parameters = func_expr.parameters.as_ref().unwrap().iter();
+            let mut arguments = call_expr.arguments.as_ref().unwrap().iter();
+            while parameter_count > 0 {
+                let parameter = parameters.next().unwrap();
+                let argument = arguments.next().unwrap();
+                let arg_val = self.evaluate_expression(argument, env.clone())?;
+                let name_bytes = parameter.get_bytes().unwrap(); // NOTE: ideally this should never fail.
+                child_env
+                    .as_ref()
+                    .borrow_mut()
+                    .add(name_bytes.clone(), arg_val);
+
+                parameter_count -= 1;
             }
+        }
+        for (index, stmt) in func_expr.body.iter().enumerate() {
+            self.evaluate_stmt(stmt, child_env.clone())?;
         }
         //TODO: add the support for return stmt and returning a value from a function also.
         //For now, the function will always return a nil.
