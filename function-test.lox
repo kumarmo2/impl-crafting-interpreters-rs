@@ -9,9 +9,20 @@ fun () {
 }();
 
 fun add(a, b) {
-    print a + b;
+    return a + b;
 }
 
 add(21, 1);
 print add(21, 23); // expect: 44
 
+fun smaller(a, b) {
+    if a <= b {
+        return a;
+    } else {
+        return b;
+    }
+}
+
+print smaller(12, 10);
+
+return 2;

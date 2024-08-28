@@ -423,6 +423,11 @@ impl Parser {
         })))
     }
 
+    fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
+        self.advance_token();
+        let expr = self.parse_expression(Precedence::Lowest)?;
+        return Ok(Statement::Return(expr));
+    }
     fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
         self.advance_token();
         let expr: Option<Expression>;
@@ -499,6 +504,7 @@ impl Parser {
             Token::If => return self.parse_if_statement(),
             Token::While => return self.parse_while_statement(),
             Token::For => self.parse_for_statement_and_desugar_it()?,
+            Token::Return => self.parse_return_statement()?,
             _ => Statement::Expression(self.parse_expression(Precedence::Lowest)?),
         };
         Ok(stmt)

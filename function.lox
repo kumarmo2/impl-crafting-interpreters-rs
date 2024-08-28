@@ -18,7 +18,3 @@ print a;
 
 print func2( 5, 10, 9);
 
-
-var a = fun () {
-
-};

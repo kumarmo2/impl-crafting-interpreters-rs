@@ -1,6 +1,8 @@
 #![allow(dead_code, unused_variables)]
 
-use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, io::Write, rc::Rc};
+use std::{
+    borrow::BorrowMut, cell::RefCell, collections::HashMap, error::Error, io::Write, rc::Rc,
+};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -13,7 +15,9 @@ use crate::{
         ParseError, Parser,
     },
     token::Token,
+    Void,
 };
+use crate::{Either, Either::Right};
 
 #[derive(Clone, Debug)]
 pub(crate) enum Object {
@@ -457,7 +461,9 @@ where
             }
         }
         for (index, stmt) in func_expr.body.iter().enumerate() {
-            self.evaluate_stmt(stmt, child_env.clone())?;
+            if let Right(val) = self.evaluate_stmt(stmt, child_env.clone())? {
+                return Ok(val);
+            }
         }
         //TODO: add the support for return stmt and returning a value from a function also.
         //For now, the function will always return a nil.
@@ -494,7 +500,7 @@ where
         &mut self,
         stmt: &Statement,
         env: Rc<RefCell<Environment>>,
-    ) -> Result<(), EvaluationError> {
+    ) -> Result<Either<Void, Object>, EvaluationError> {
         match stmt {
             Statement::Expression(e) => {
                 self.evaluate_expression(e, env)?;
@@ -519,23 +525,32 @@ where
                     parent_env: Some(env.clone()),
                 }));
                 for stmt in stmts.iter() {
-                    self.evaluate_stmt(&stmt, child_env.clone())?;
+                    if let Right(val) = self.evaluate_stmt(&stmt, child_env.clone())? {
+                        return Ok(Right(val));
+                    }
                 }
             }
             Statement::IfStatement(if_statement) => {
-                self.evaluate_if_statement(if_statement, env.clone())?
+                if let Right(val) = self.evaluate_if_statement(if_statement, env.clone())? {
+                    return Ok(Right(val));
+                }
             }
             Statement::WhileLoop(while_loop) => {
-                self.evaluate_while_statement(while_loop, env.clone())?
+                if let Right(val) = self.evaluate_while_statement(while_loop, env.clone())? {
+                    return Ok(Right(val));
+                }
+            }
+            Statement::Return(exp) => {
+                return Ok(Right(self.evaluate_expression(exp, env.clone())?));
             }
         };
-        Ok(())
+        Ok(Either::Left(Void))
     }
     fn evaluate_while_statement(
         &mut self,
         while_loop: &WhileLoop,
         env: Env,
-    ) -> Result<(), EvaluationError> {
+    ) -> Result<Either<Void, Object>, EvaluationError> {
         loop {
             let mut val = true;
             if let Some(expr) = &while_loop.expr {
@@ -545,25 +560,31 @@ where
             if !val {
                 break;
             }
-            self.evaluate_stmt(while_loop.block.as_ref(), env.clone())?
+            if let Right(val) = self.evaluate_stmt(while_loop.block.as_ref(), env.clone())? {
+                return Ok(Right(val));
+            }
         }
 
-        Ok(())
+        Ok(Either::Left(Void))
     }
     fn evaluate_if_statement(
         &mut self,
         if_statement: &IfStatement,
         env: Env,
-    ) -> Result<(), EvaluationError> {
+    ) -> Result<Either<Void, Object>, EvaluationError> {
         let expr = &if_statement.expr;
         let val = self.evaluate_expression(expr, env.clone())?;
         let val = val.get_truthy_value();
         if val {
-            self.evaluate_stmt(&if_statement.if_block, env.clone())?
+            if let Right(val) = self.evaluate_stmt(&if_statement.if_block, env.clone())? {
+                return Ok(Right(val));
+            }
         } else if let Some(else_block) = &if_statement.else_block {
-            self.evaluate_stmt(else_block, env.clone())?;
+            if let Right(val) = self.evaluate_stmt(else_block, env.clone())? {
+                return Ok(Right(val));
+            }
         }
-        Ok(())
+        Ok(Either::Left(Void))
     }
 
     pub(crate) fn writer(&self) -> &W {
@@ -579,7 +600,14 @@ where
         let global_env = Rc::new(RefCell::new(Environment::default()));
 
         for stmt in statements.iter() {
-            self.evaluate_stmt(stmt, global_env.clone())?;
+            match self.evaluate_stmt(stmt, global_env.clone())? {
+                Either::Left(_) => (),
+                Either::Right(_) => {
+                    return Err(EvaluationError::Runtime(format!(
+                        "return statements can only be in functions"
+                    )))
+                }
+            }
         }
         Ok(())
     }

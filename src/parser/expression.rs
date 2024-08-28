@@ -167,6 +167,7 @@ pub(crate) enum Statement {
     Block(Vec<Statement>),
     IfStatement(Box<IfStatement>),
     WhileLoop(WhileLoop),
+    Return(Expression),
 }
 
 impl Statement {
@@ -231,6 +232,7 @@ impl std::fmt::Debug for Statement {
             Statement::WhileLoop(WhileLoop { expr, block }) => {
                 write!(f, "while ( {:?} ) {:?}", expr, block)
             }
+            Statement::Return(e) => write!(f, "return {e:?}"),
         }
     }
 }
