@@ -1,10 +1,9 @@
 #![allow(dead_code, unused_variables)]
 
-use std::{
-    borrow::BorrowMut, cell::RefCell, collections::HashMap, error::Error, io::Write, rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
+pub(crate) mod native;
 
 use crate::{
     parser::{
@@ -19,13 +18,29 @@ use crate::{
 };
 use crate::{Either, Either::Right};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) enum Object {
     Number(f64),
     Boolean(bool),
     String(Bytes),
     Function(Rc<FunctionExpression>),
+    NativeFunction(Rc<dyn Fn(Option<Box<dyn Iterator<Item = Object>>>) -> Object>),
     Nil,
+}
+impl std::fmt::Debug for Object {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Object::Number(v) => write!(f, "{}", v),
+            Object::Boolean(v) => write!(f, "{}", v),
+            Object::Nil => write!(f, "nil"),
+            Object::String(bytes) => {
+                let str = unsafe { std::str::from_utf8_unchecked(bytes.as_ref()) };
+                write!(f, "{}", str)
+            }
+            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
+            Object::NativeFunction(_) => write!(f, "<fn native>"),
+        }
+    }
 }
 
 impl Object {
@@ -36,6 +51,7 @@ impl Object {
             Object::String(_) => true,
             Object::Nil => false,
             Object::Function(_) => true,
+            Object::NativeFunction(_) => true,
         }
     }
 }
@@ -50,8 +66,8 @@ impl std::fmt::Display for Object {
                 let str = unsafe { std::str::from_utf8_unchecked(bytes.as_ref()) };
                 write!(f, "{}", str)
             }
-            // TODO: implement this to make the output readable.
-            Object::Function(fe) => write!(f, "{fe:?}"),
+            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
+            Object::NativeFunction(_) => write!(f, "<fn native>"),
         }
     }
 }
@@ -412,6 +428,13 @@ where
         Ok(val)
     }
 
+    fn evaluate_native_function_call(
+        &self,
+        func: Rc<dyn Fn(Option<Box<dyn Iterator<Item = Object>>>) -> Object>,
+    ) -> Result<Object, EvaluationError> {
+        Ok((func.as_ref())(None))
+    }
+
     fn evaluate_function_call(
         &mut self,
         call_expr: &CallExpression,
@@ -419,6 +442,7 @@ where
     ) -> Result<Object, EvaluationError> {
         let func_expr = match self.evaluate_expression(call_expr.callee.as_ref(), env.clone())? {
             Object::Function(fe) => fe,
+            Object::NativeFunction(nfe) => return self.evaluate_native_function_call(nfe),
             expr => {
                 return Err(EvaluationError::Runtime(format!(
                     "Callee must be a function"
@@ -440,7 +464,7 @@ where
 
         if arguments_count != parameter_count {
             return Err(EvaluationError::Runtime(format!(
-                "arguments_count mismatch"
+                "Expected {parameter_count} arguments but got {arguments_count}."
             )));
         }
         let child_env = Rc::new(RefCell::new(Environment::with_parent(env.clone())));
@@ -598,6 +622,11 @@ where
             .or_else(|e| Err(EvaluationError::ParseError(e)))?;
 
         let global_env = Rc::new(RefCell::new(Environment::default()));
+        use native::clock;
+        global_env.as_ref().borrow_mut().add(
+            b"clock".as_ref().into(),
+            Object::NativeFunction(Rc::new(clock)),
+        );
 
         for stmt in statements.iter() {
             match self.evaluate_stmt(stmt, global_env.clone())? {

@@ -1,28 +1,14 @@
-fun take() {
-    print 5 + 1;
+fun fib(n) {
+  if (n < 2) return n;
+  return fib(n - 1) + fib(n - 2);
 }
 
-take();
+var start = clock();
+var result = fib(25);
+var end = clock();
 
-fun () {
-    print "iifee called";
-}();
+print "result: ";
+print result;
+print "took time: ";
+print end - start;
 
-fun add(a, b) {
-    return a + b;
-}
-
-add(21, 1);
-print add(21, 23); // expect: 44
-
-fun smaller(a, b) {
-    if a <= b {
-        return a;
-    } else {
-        return b;
-    }
-}
-
-print smaller(12, 10);
-
-return 2;

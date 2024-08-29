@@ -26,6 +26,9 @@ pub(crate) enum ParseError {
         got: Token,
         line: u32,
     },
+    TooManyArguments {
+        at: Token,
+    },
     UnmatchedParentheses,
     InvalidAssignmentTarget,
 }
@@ -44,6 +47,9 @@ impl std::fmt::Debug for ParseError {
             ParseError::UnmatchedParentheses => write!(f, "Error: Unmatched parentheses."),
             ParseError::InvalidAssignmentTarget => {
                 write!(f, "Error at '=': Invalid assignment target.")
+            }
+            ParseError::TooManyArguments { at } => {
+                write!(f, "Error at '{at}': Can't have more than 255 arguments.")
             }
         }
     }
@@ -147,6 +153,11 @@ impl Parser {
             if let Token::RParen = &self.curr_token {
                 // self.advance_token();
                 break;
+            }
+            if args.len() == 255 {
+                return Err(ParseError::TooManyArguments {
+                    at: self.curr_token.clone(),
+                });
             }
             let arg = self.parse_expression(Precedence::Lowest)?;
             self.advance_token();

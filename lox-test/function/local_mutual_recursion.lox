@@ -5,9 +5,9 @@
   }
 
   fun isOdd(n) {
-    if (n == 0) return false;
+    if n == 0 return false;
     return isEven(n - 1);
   }
 
-  isEven(4);
+  print isEven(4);
 }

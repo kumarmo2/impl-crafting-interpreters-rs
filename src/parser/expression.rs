@@ -34,11 +34,28 @@ pub(crate) struct CallExpression {
     pub(crate) arguments: Option<Vec<Expression>>,
 }
 
-#[derive(Debug)]
 pub(crate) struct FunctionExpression {
     pub(crate) name: Option<Token>,
     pub(crate) parameters: Option<Vec<Token>>,
     pub(crate) body: Vec<Statement>,
+}
+
+impl std::fmt::Debug for FunctionExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let FunctionExpression { name, .. } = self;
+        write!(f, "<fun")?;
+        match name {
+            Some(name) => match name {
+                Token::Identifier(name) => {
+                    let name = unsafe { std::str::from_utf8_unchecked(name) };
+                    write!(f, " {name}>")?;
+                }
+                _ => unreachable!(),
+            },
+            None => write!(f, ">")?,
+        };
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for Expression {
@@ -64,43 +81,7 @@ impl std::fmt::Debug for Expression {
                 std::str::from_utf8_unchecked(ident_bytes.as_ref())
             }),
             Expression::Print(e) => write!(f, "print {:?}", e.as_ref()),
-            Expression::Function(fe) => {
-                let FunctionExpression {
-                    name,
-                    parameters,
-                    body,
-                } = fe.as_ref();
-                write!(f, "fun")?;
-                match name {
-                    Some(name) => match name {
-                        Token::Identifier(name) => {
-                            let name = unsafe { std::str::from_utf8_unchecked(name) };
-                            write!(f, " {name}(")?;
-                        }
-                        _ => unreachable!(),
-                    },
-                    None => write!(f, "(")?,
-                };
-                if let Some(parameters) = parameters {
-                    let params = parameters
-                        .iter()
-                        .map(|p| match p {
-                            Token::Identifier(name_bytes) => unsafe {
-                                std::str::from_utf8_unchecked(name_bytes.as_ref())
-                            },
-                            _ => unreachable!("token must be identifier, but got {p:?}"),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    write!(f, "{params})")?;
-                } else {
-                    write!(f, ") ")?;
-                }
-                write!(f, "{body:?}")?;
-
-                Ok(())
-            }
+            Expression::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
             Expression::Call(CallExpression { callee, arguments }) => {
                 write!(f, "{callee:?}(", callee = callee.as_ref())?;
                 if let Some(args) = arguments {

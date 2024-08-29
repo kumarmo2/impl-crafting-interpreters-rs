@@ -9,3 +9,6 @@ mod operator;
 
 #[cfg(test)]
 mod while_tests;
+
+#[cfg(test)]
+mod function;
