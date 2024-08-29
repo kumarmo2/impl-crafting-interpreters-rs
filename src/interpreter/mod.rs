@@ -38,7 +38,7 @@ impl std::fmt::Debug for Object {
                 write!(f, "{}", str)
             }
             Object::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
-            Object::NativeFunction(_) => write!(f, "<fn native>"),
+            Object::NativeFunction(_) => write!(f, "<native fn>"),
         }
     }
 }
@@ -67,7 +67,7 @@ impl std::fmt::Display for Object {
                 write!(f, "{}", str)
             }
             Object::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
-            Object::NativeFunction(_) => write!(f, "<fn native>"),
+            Object::NativeFunction(_) => write!(f, "<native fn>"),
         }
     }
 }

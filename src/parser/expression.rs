@@ -43,7 +43,7 @@ pub(crate) struct FunctionExpression {
 impl std::fmt::Debug for FunctionExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let FunctionExpression { name, .. } = self;
-        write!(f, "<fun")?;
+        write!(f, "<fn")?;
         match name {
             Some(name) => match name {
                 Token::Identifier(name) => {
