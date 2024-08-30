@@ -53,13 +53,6 @@ fn test_closure_positive_tests() {
             "a\n",
         ),
     ];
-    // let expecteds = [
-    //     "param\n",
-    //     "global\ninner\nassigned\nassigned\n",
-    //     "local\nafter f\nafter f\nafter g\n",
-    //     "b\na\n",
-    //     "local\n",
-    // ];
     let sources = tuple.clone().map(|t| t.0).into_iter();
     let expecteds = tuple.map(|t| t.1).into_iter();
     test_positive_tests(sources, expecteds);
