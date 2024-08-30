@@ -1,0 +1,14 @@
+fun fib(n) {
+  if (n < 2) return n;
+  return fib(n - 1) + fib(n - 2);
+}
+
+var start = clock();
+var result = fib(25);
+var end = clock();
+
+print "result: ";
+print result;
+print "took time: ";
+print end - start;
+

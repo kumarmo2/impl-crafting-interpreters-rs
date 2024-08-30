@@ -1,6 +1,11 @@
 #![allow(dead_code)]
 
-use expression::{Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop};
+use std::rc::Rc;
+
+use expression::{
+    CallExpression, Expression, FunctionExpression, IfStatement, Precedence, Statement,
+    VarDeclaration, WhileLoop,
+};
 
 use crate::token::{LexicalError, Scanner, Token, TokenIterator};
 pub(crate) mod expression;
@@ -21,6 +26,9 @@ pub(crate) enum ParseError {
         got: Token,
         line: u32,
     },
+    TooManyArguments {
+        at: Token,
+    },
     UnmatchedParentheses,
     InvalidAssignmentTarget,
 }
@@ -39,6 +47,9 @@ impl std::fmt::Debug for ParseError {
             ParseError::UnmatchedParentheses => write!(f, "Error: Unmatched parentheses."),
             ParseError::InvalidAssignmentTarget => {
                 write!(f, "Error at '=': Invalid assignment target.")
+            }
+            ParseError::TooManyArguments { at } => {
+                write!(f, "Error at '{at}': Can't have more than 255 arguments.")
             }
         }
     }
@@ -87,6 +98,8 @@ impl Parser {
         if should_forward_peek_token {
             // TODO: remove unwraps
             self.peek_token = self._token_iterator.next().unwrap().unwrap();
+        } else {
+            self.peek_token = Token::EOF;
         }
     }
 
@@ -133,6 +146,138 @@ impl Parser {
     }
 
     #[allow(unused_variables)]
+    fn parse_call_expression(&mut self, left_expr: Expression) -> ParseResult<Expression> {
+        self.advance_token();
+        let mut args: Vec<Expression> = vec![];
+        loop {
+            if let Token::RParen = &self.curr_token {
+                // self.advance_token();
+                break;
+            }
+            if args.len() == 255 {
+                return Err(ParseError::TooManyArguments {
+                    at: self.curr_token.clone(),
+                });
+            }
+            let arg = self.parse_expression(Precedence::Lowest)?;
+            self.advance_token();
+
+            match &self.curr_token {
+                Token::RParen => (),
+                Token::COMMA => {
+                    self.advance_token();
+                    // TODO: Here I should make sure the arguments list is not ending with `comma`.
+                }
+                token => {
+                    return Err(ParseError::ExpectedTokenNotFound {
+                        expected: "expression",
+                        got: token.clone(),
+                        line: self.get_curr_line(),
+                    })
+                }
+            }
+            args.push(arg);
+        }
+        let args = match args.len() {
+            0 => None,
+            _ => Some(args),
+        };
+        Ok(Expression::Call(CallExpression {
+            arguments: args,
+            callee: Box::new(left_expr),
+        }))
+    }
+
+    fn parse_function_expression(&mut self) -> ParseResult<Expression> {
+        self.advance_token();
+        let name: Option<Token>;
+        if let Token::Identifier(_) = &self.curr_token {
+            name = Some(self.curr_token.clone());
+            self.advance_token();
+        } else {
+            name = None;
+        }
+        match &self.curr_token {
+            Token::LParen => (),
+            token => {
+                return Err(ParseError::ExpectedTokenNotFound {
+                    expected: "(",
+                    got: token.clone(),
+                    line: self.get_curr_line(),
+                })
+            }
+        };
+        self.advance_token();
+
+        let mut params: Vec<Token> = Vec::new();
+
+        loop {
+            if let Token::RParen = &self.curr_token {
+                self.advance_token();
+                break;
+            }
+
+            let name_token = match &self.curr_token {
+                Token::Identifier(_) => self.curr_token.clone(),
+                t => {
+                    return Err(ParseError::ExpectedTokenNotFound {
+                        expected: "identifier",
+                        got: t.clone(),
+                        line: self.get_curr_line(),
+                    })
+                }
+            };
+            self.advance_token();
+
+            match &self.curr_token {
+                Token::RParen => (),
+                Token::COMMA => match &self.peek_token {
+                    Token::Identifier(_) => self.advance_token(),
+                    t => {
+                        return Err(ParseError::ExpectedTokenNotFound {
+                            expected: "identifier",
+                            got: t.clone(),
+                            line: self.get_curr_line(),
+                        })
+                    }
+                },
+                t => {
+                    return Err(ParseError::ExpectedTokenNotFound {
+                        expected: "identifier",
+                        got: t.clone(),
+                        line: self.get_curr_line(),
+                    })
+                }
+            }
+            params.push(name_token);
+        }
+        let body = match &self.curr_token {
+            Token::LBrace => self.parse_block_statement(true)?,
+            token => {
+                return Err(ParseError::ExpectedTokenNotFound {
+                    expected: "{",
+                    got: token.clone(),
+                    line: self.get_curr_line(),
+                })
+            }
+        };
+        let params = match params.len() {
+            0 => None,
+            _ => Some(params),
+        };
+        let stmts = if let Statement::Block(stmts) = body {
+            stmts
+        } else {
+            unreachable!();
+        };
+        Ok(Expression::Function(Rc::new(FunctionExpression {
+            body: stmts,
+            parameters: params,
+            name,
+        })))
+    }
+
+    #[allow(unused_variables)]
     pub(crate) fn parse_expression(
         &mut self,
         precendence: Precedence,
@@ -149,6 +294,10 @@ impl Parser {
                 self.advance_token();
                 let expr = self.parse_expression(precendence.clone())?;
                 Expression::Print(Box::new(expr))
+            }
+            Token::Fun => {
+                let fn_expr = self.parse_function_expression()?;
+                fn_expr
             }
             Token::Nil => Expression::NilLiteral,
             t => {
@@ -183,6 +332,10 @@ impl Parser {
                     self.advance_token();
                     let expr = self.parse_infix_operator_expression(left_expr)?;
                     expr
+                }
+                Token::LParen => {
+                    self.advance_token();
+                    self.parse_call_expression(left_expr)?
                 }
                 Token::EQUAL => {
                     // NOTE:  assignment is different from other infix operators as this is right associative.
@@ -281,6 +434,11 @@ impl Parser {
         })))
     }
 
+    fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
+        self.advance_token();
+        let expr = self.parse_expression(Precedence::Lowest)?;
+        return Ok(Statement::Return(expr));
+    }
     fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
         self.advance_token();
         let expr: Option<Expression>;
@@ -328,21 +486,21 @@ impl Parser {
             block_body = self.parse_statement()?;
         }
 
-        let mut final_block_stmts = Vec::<Box<Statement>>::new();
+        let mut final_block_stmts = Vec::<Statement>::new();
         if let Some(v) = var_declaration {
-            final_block_stmts.push(Box::new(v));
+            final_block_stmts.push(v);
         }
 
-        let mut while_block_body: Vec<Box<Statement>> = vec![Box::new(block_body)];
+        let mut while_block_body: Vec<Statement> = vec![block_body];
 
         if let Some(v) = incr_stmt {
-            while_block_body.push(Box::new(v));
+            while_block_body.push(v);
         }
         let while_loop = Statement::WhileLoop(WhileLoop {
             expr: conditional_expr,
             block: Box::new(Statement::Block(while_block_body)),
         });
-        final_block_stmts.push(Box::new(while_loop));
+        final_block_stmts.push(while_loop);
         Ok(Statement::Block(final_block_stmts))
     }
 
@@ -357,6 +515,7 @@ impl Parser {
             Token::If => return self.parse_if_statement(),
             Token::While => return self.parse_while_statement(),
             Token::For => self.parse_for_statement_and_desugar_it()?,
+            Token::Return => self.parse_return_statement()?,
             _ => Statement::Expression(self.parse_expression(Precedence::Lowest)?),
         };
         Ok(stmt)
@@ -364,9 +523,14 @@ impl Parser {
 
     fn parse_single_statement(&mut self) -> Result<Statement, ParseError> {
         let stmt = self.parse_single_statement_without_semicolon()?;
+        // println!("{stmt:?}");
         match &stmt {
             Statement::IfStatement(_) | Statement::WhileLoop(_) | Statement::Block(_) => {
                 return Ok(stmt)
+            }
+            Statement::Expression(Expression::Function(_)) => {
+                self.advance_token();
+                return Ok(stmt);
             }
             _ => {
                 self.ensure_semicolon_at_statement_end()?;
@@ -376,21 +540,28 @@ impl Parser {
         }
     }
 
+    fn parse_block_statement(
+        &mut self,
+        is_block_part_of_expression: bool,
+    ) -> Result<Statement, ParseError> {
+        self.advance_token();
+        let mut stms: Vec<Statement> = vec![];
+        loop {
+            if let Token::RBrace = self.curr_token {
+                if !is_block_part_of_expression {
+                    self.advance_token();
+                }
+                break;
+            }
+            let stmt = self.parse_statement()?;
+            stms.push(stmt);
+        }
+        Ok(Statement::Block(stms))
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         let stmt = match &self.curr_token {
-            Token::LBrace => {
-                self.advance_token();
-                let mut stms: Vec<Box<Statement>> = vec![];
-                loop {
-                    if let Token::RBrace = self.curr_token {
-                        self.advance_token();
-                        break;
-                    }
-                    let stmt = self.parse_statement()?;
-                    stms.push(Box::new(stmt));
-                }
-                Statement::Block(stms)
-            }
+            Token::LBrace => self.parse_block_statement(false)?,
             _ => self.parse_single_statement()?,
         };
         Ok(stmt)

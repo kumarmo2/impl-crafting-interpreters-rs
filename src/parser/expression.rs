@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use bytes::Bytes;
 
 use crate::token::Token;
@@ -24,6 +26,36 @@ pub(crate) enum Expression {
         left_expr: Box<Expression>,
         right_expr: Box<Expression>,
     },
+    Function(Rc<FunctionExpression>),
+    Call(CallExpression),
+}
+pub(crate) struct CallExpression {
+    pub(crate) callee: Box<Expression>,
+    pub(crate) arguments: Option<Vec<Expression>>,
+}
+
+pub(crate) struct FunctionExpression {
+    pub(crate) name: Option<Token>,
+    pub(crate) parameters: Option<Vec<Token>>,
+    pub(crate) body: Vec<Statement>,
+}
+
+impl std::fmt::Debug for FunctionExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let FunctionExpression { name, .. } = self;
+        write!(f, "<fn")?;
+        match name {
+            Some(name) => match name {
+                Token::Identifier(name) => {
+                    let name = unsafe { std::str::from_utf8_unchecked(name) };
+                    write!(f, " {name}>")?;
+                }
+                _ => unreachable!(),
+            },
+            None => write!(f, ">")?,
+        };
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for Expression {
@@ -49,6 +81,20 @@ impl std::fmt::Debug for Expression {
                 std::str::from_utf8_unchecked(ident_bytes.as_ref())
             }),
             Expression::Print(e) => write!(f, "print {:?}", e.as_ref()),
+            Expression::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
+            Expression::Call(CallExpression { callee, arguments }) => {
+                write!(f, "{callee:?}(", callee = callee.as_ref())?;
+                if let Some(args) = arguments {
+                    let args_count = args.len();
+                    for (index, arg) in args.iter().enumerate() {
+                        write!(f, "{arg:?}")?;
+                        if index != args_count - 1 {
+                            write!(f, ",")?;
+                        }
+                    }
+                }
+                write!(f, ")")
+            }
         }
     }
 }
@@ -99,9 +145,10 @@ pub(crate) enum Statement {
     Print(Expression),
     VarDeclaration(VarDeclaration),
     // Assignment(Assignment),
-    Block(Vec<Box<Statement>>),
+    Block(Vec<Statement>),
     IfStatement(Box<IfStatement>),
     WhileLoop(WhileLoop),
+    Return(Expression),
 }
 
 impl Statement {
@@ -109,10 +156,10 @@ impl Statement {
         &self,
         f: &mut std::fmt::Formatter<'_>,
         prefix_whitespace: &str,
-        statements: &Vec<Box<Statement>>,
+        statements: &Vec<Statement>,
     ) -> std::fmt::Result {
         for stmt in statements.iter() {
-            match stmt.as_ref() {
+            match &stmt {
                 Statement::Block(stms) => {
                     write!(f, "{prefix_whitespace}{{\n")?;
                     let _ =
@@ -129,7 +176,11 @@ impl Statement {
 impl std::fmt::Debug for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Statement::Expression(e) => write!(f, "{:?};", e),
+            Statement::Expression(e) => match e {
+                Expression::Function(_) => write!(f, "{e:?}"),
+                _ => write!(f, "{:?};", e),
+            },
+
             Statement::Print(e) => write!(f, "print {:?};", e),
             Statement::VarDeclaration(VarDeclaration { identifier, expr }) => {
                 let identifier = unsafe { std::str::from_utf8_unchecked(identifier.as_ref()) };
@@ -138,10 +189,6 @@ impl std::fmt::Debug for Statement {
                     None => write!(f, "var {};", identifier),
                 }
             }
-            // Statement::Assignment(Assignment { identifier, expr }) => {
-            //     let identifier = unsafe { std::str::from_utf8_unchecked(identifier.as_ref()) };
-            //     write!(f, "{identifier} = {:?}", expr)
-            // }
             Statement::Block(statements) => {
                 write!(f, "{{\n")?;
                 self.print_statements(f, "  ", statements)?;
@@ -166,6 +213,7 @@ impl std::fmt::Debug for Statement {
             Statement::WhileLoop(WhileLoop { expr, block }) => {
                 write!(f, "while ( {:?} ) {:?}", expr, block)
             }
+            Statement::Return(e) => write!(f, "return {e:?}"),
         }
     }
 }

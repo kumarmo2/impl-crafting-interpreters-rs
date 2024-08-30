@@ -5,9 +5,11 @@ var a = "global";
     a = "assigned";
   }
 
-  var a = "inner";
-  assign();
+  print a; // expect: global
+  a = "inner";
   print a; // expect: inner
+  assign();
+  print a; // expect: assigned
 }
 
 print a; // expect: assigned

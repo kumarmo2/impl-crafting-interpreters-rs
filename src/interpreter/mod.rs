@@ -3,21 +3,51 @@
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
+pub(crate) mod native;
 
 use crate::{
     parser::{
-        expression::{Expression, IfStatement, Precedence, Statement, VarDeclaration, WhileLoop},
+        expression::{
+            CallExpression, Expression, FunctionExpression, IfStatement, Precedence, Statement,
+            VarDeclaration, WhileLoop,
+        },
         ParseError, Parser,
     },
     token::Token,
+    Void,
 };
+use crate::{Either, Either::Right};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) enum Object {
     Number(f64),
     Boolean(bool),
     String(Bytes),
+    Function(Function),
+    NativeFunction(Rc<dyn Fn(Option<Box<dyn Iterator<Item = Object>>>) -> Object>),
     Nil,
+}
+
+#[derive(Clone)]
+struct Function {
+    fe: Rc<FunctionExpression>,
+    env: Env,
+}
+
+impl std::fmt::Debug for Object {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Object::Number(v) => write!(f, "{}", v),
+            Object::Boolean(v) => write!(f, "{}", v),
+            Object::Nil => write!(f, "nil"),
+            Object::String(bytes) => {
+                let str = unsafe { std::str::from_utf8_unchecked(bytes.as_ref()) };
+                write!(f, "{}", str)
+            }
+            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.fe.as_ref()),
+            Object::NativeFunction(_) => write!(f, "<native fn>"),
+        }
+    }
 }
 
 impl Object {
@@ -27,6 +57,8 @@ impl Object {
             Object::Boolean(v) => *v,
             Object::String(_) => true,
             Object::Nil => false,
+            Object::Function(_) => true,
+            Object::NativeFunction(_) => true,
         }
     }
 }
@@ -41,6 +73,8 @@ impl std::fmt::Display for Object {
                 let str = unsafe { std::str::from_utf8_unchecked(bytes.as_ref()) };
                 write!(f, "{}", str)
             }
+            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.fe.as_ref()),
+            Object::NativeFunction(_) => write!(f, "<native fn>"),
         }
     }
 }
@@ -50,10 +84,16 @@ type Env = Rc<RefCell<Environment>>;
 #[derive(Default, Debug)]
 pub(crate) struct Environment {
     values: HashMap<Bytes, Object>,
-    parent_env: Option<Env>, // 'p_env >= 'env
+    parent_env: Option<Env>,
 }
 
 impl Environment {
+    pub(crate) fn with_parent(parent: Env) -> Self {
+        Self {
+            values: HashMap::default(),
+            parent_env: Some(parent),
+        }
+    }
     pub(crate) fn add(&mut self, key: Bytes, val: Object) -> Option<Object> {
         self.values.insert(key, val)
     }
@@ -353,7 +393,7 @@ where
     fn evaluate_expression(
         &mut self,
         expression: &Expression,
-        env: Rc<RefCell<Environment>>,
+        env: Env,
     ) -> Result<Object, EvaluationError> {
         let val = match expression {
             Expression::NilLiteral => Object::Nil,
@@ -387,8 +427,104 @@ where
                 let _ = writeln!(self.writer, "{}", val);
                 Object::Nil
             }
+            Expression::Function(fe) => {
+                self.evaluate_funtion_expression(fe.clone(), env.clone())?
+            }
+            Expression::Call(ce) => self.evaluate_function_call(ce, env.clone())?,
         };
         Ok(val)
+    }
+
+    fn evaluate_native_function_call(
+        &self,
+        func: Rc<dyn Fn(Option<Box<dyn Iterator<Item = Object>>>) -> Object>,
+    ) -> Result<Object, EvaluationError> {
+        Ok((func.as_ref())(None))
+    }
+
+    fn evaluate_function_call(
+        &mut self,
+        call_expr: &CallExpression,
+        env: Env,
+    ) -> Result<Object, EvaluationError> {
+        let Function {
+            fe: func_expr,
+            env: captured_env,
+        } = match self.evaluate_expression(call_expr.callee.as_ref(), env.clone())? {
+            Object::Function(fe) => fe,
+            Object::NativeFunction(nfe) => return self.evaluate_native_function_call(nfe),
+            expr => {
+                return Err(EvaluationError::Runtime(format!(
+                    "Callee must be a function"
+                )))
+            }
+        };
+        let arguments_count = call_expr
+            .arguments
+            .as_ref()
+            .and_then(|args| Some(args.len()))
+            .unwrap_or_else(|| 0);
+
+        let mut parameter_count = func_expr
+            .as_ref()
+            .parameters
+            .as_ref()
+            .and_then(|args| Some(args.len()))
+            .unwrap_or_else(|| 0);
+
+        if arguments_count != parameter_count {
+            return Err(EvaluationError::Runtime(format!(
+                "Expected {parameter_count} arguments but got {arguments_count}."
+            )));
+        }
+        let child_env = Rc::new(RefCell::new(Environment::with_parent(captured_env.clone())));
+        if arguments_count != 0 {
+            let mut parameters = func_expr.parameters.as_ref().unwrap().iter();
+            let mut arguments = call_expr.arguments.as_ref().unwrap().iter();
+            while parameter_count > 0 {
+                let parameter = parameters.next().unwrap();
+                let argument = arguments.next().unwrap();
+                let arg_val = self.evaluate_expression(argument, env.clone())?;
+                let name_bytes = parameter.get_bytes().unwrap(); // NOTE: ideally this should never fail.
+                child_env
+                    .as_ref()
+                    .borrow_mut()
+                    .add(name_bytes.clone(), arg_val);
+
+                parameter_count -= 1;
+            }
+        }
+        for (index, stmt) in func_expr.body.iter().enumerate() {
+            if let Right(val) = self.evaluate_stmt(stmt, child_env.clone())? {
+                return Ok(val);
+            }
+        }
+        //TODO: add the support for return stmt and returning a value from a function also.
+        //For now, the function will always return a nil.
+        Ok(Object::Nil)
+    }
+
+    fn evaluate_funtion_expression(
+        &self,
+        fe: Rc<FunctionExpression>,
+        env: Env,
+    ) -> Result<Object, EvaluationError> {
+        if let Some(name_token) = fe.as_ref().name.as_ref() {
+            if let Some(name_bytes) = name_token.get_bytes() {
+                // add in the environment.
+                env.as_ref().borrow_mut().add(
+                    name_bytes.clone(),
+                    Object::Function(Function {
+                        fe: fe.clone(),
+                        env: env.clone(),
+                    }),
+                );
+            }
+        }
+        Ok(Object::Function(Function {
+            fe: fe,
+            env: env.clone(),
+        }))
     }
 
     pub(crate) fn evaluate(&mut self) -> Result<Object, EvaluationError> {
@@ -405,7 +541,7 @@ where
         &mut self,
         stmt: &Statement,
         env: Rc<RefCell<Environment>>,
-    ) -> Result<(), EvaluationError> {
+    ) -> Result<Either<Void, Object>, EvaluationError> {
         match stmt {
             Statement::Expression(e) => {
                 self.evaluate_expression(e, env)?;
@@ -430,23 +566,32 @@ where
                     parent_env: Some(env.clone()),
                 }));
                 for stmt in stmts.iter() {
-                    self.evaluate_stmt(stmt.as_ref(), child_env.clone())?;
+                    if let Right(val) = self.evaluate_stmt(&stmt, child_env.clone())? {
+                        return Ok(Right(val));
+                    }
                 }
             }
             Statement::IfStatement(if_statement) => {
-                self.evaluate_if_statement(if_statement, env.clone())?
+                if let Right(val) = self.evaluate_if_statement(if_statement, env.clone())? {
+                    return Ok(Right(val));
+                }
             }
             Statement::WhileLoop(while_loop) => {
-                self.evaluate_while_statement(while_loop, env.clone())?
+                if let Right(val) = self.evaluate_while_statement(while_loop, env.clone())? {
+                    return Ok(Right(val));
+                }
+            }
+            Statement::Return(exp) => {
+                return Ok(Right(self.evaluate_expression(exp, env.clone())?));
             }
         };
-        Ok(())
+        Ok(Either::Left(Void))
     }
     fn evaluate_while_statement(
         &mut self,
         while_loop: &WhileLoop,
         env: Env,
-    ) -> Result<(), EvaluationError> {
+    ) -> Result<Either<Void, Object>, EvaluationError> {
         loop {
             let mut val = true;
             if let Some(expr) = &while_loop.expr {
@@ -456,25 +601,31 @@ where
             if !val {
                 break;
             }
-            self.evaluate_stmt(while_loop.block.as_ref(), env.clone())?
+            if let Right(val) = self.evaluate_stmt(while_loop.block.as_ref(), env.clone())? {
+                return Ok(Right(val));
+            }
         }
 
-        Ok(())
+        Ok(Either::Left(Void))
     }
     fn evaluate_if_statement(
         &mut self,
         if_statement: &IfStatement,
         env: Env,
-    ) -> Result<(), EvaluationError> {
+    ) -> Result<Either<Void, Object>, EvaluationError> {
         let expr = &if_statement.expr;
         let val = self.evaluate_expression(expr, env.clone())?;
         let val = val.get_truthy_value();
         if val {
-            self.evaluate_stmt(&if_statement.if_block, env.clone())?
+            if let Right(val) = self.evaluate_stmt(&if_statement.if_block, env.clone())? {
+                return Ok(Right(val));
+            }
         } else if let Some(else_block) = &if_statement.else_block {
-            self.evaluate_stmt(else_block, env.clone())?;
+            if let Right(val) = self.evaluate_stmt(else_block, env.clone())? {
+                return Ok(Right(val));
+            }
         }
-        Ok(())
+        Ok(Either::Left(Void))
     }
 
     pub(crate) fn writer(&self) -> &W {
@@ -488,9 +639,21 @@ where
             .or_else(|e| Err(EvaluationError::ParseError(e)))?;
 
         let global_env = Rc::new(RefCell::new(Environment::default()));
+        use native::clock;
+        global_env.as_ref().borrow_mut().add(
+            b"clock".as_ref().into(),
+            Object::NativeFunction(Rc::new(clock)),
+        );
 
         for stmt in statements.iter() {
-            self.evaluate_stmt(stmt, global_env.clone())?;
+            match self.evaluate_stmt(stmt, global_env.clone())? {
+                Either::Left(_) => (),
+                Either::Right(_) => {
+                    return Err(EvaluationError::Runtime(format!(
+                        "return statements can only be in functions"
+                    )))
+                }
+            }
         }
         Ok(())
     }

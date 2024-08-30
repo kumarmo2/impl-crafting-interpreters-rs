@@ -14,6 +14,12 @@ pub(crate) mod token;
 #[cfg(test)]
 pub(crate) mod tests;
 
+struct Void;
+pub(crate) enum Either<L, R> {
+    Left(L),
+    Right(R),
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
