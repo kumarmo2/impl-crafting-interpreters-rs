@@ -29,7 +29,7 @@ pub(crate) enum Object {
 }
 
 #[derive(Clone)]
-struct Function {
+pub(crate) struct Function {
     fe: Rc<FunctionExpression>,
     env: Env,
 }
