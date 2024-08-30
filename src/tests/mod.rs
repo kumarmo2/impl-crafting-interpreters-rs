@@ -12,6 +12,27 @@ use crate::{
 #[cfg(test)]
 mod interpreter;
 
+pub(crate) fn test_positive_tests<T, E>(mut sources: T, mut expecteds: E)
+where
+    T: Iterator<Item = String>,
+    E: Iterator<Item = &'static str>,
+{
+    loop {
+        let Some(source) = sources.next() else {
+            return;
+        };
+        let expected = expecteds
+            .next()
+            .expect("length of sources and expecteds must be same");
+        test_positive_test(source, expected);
+    }
+}
+pub(crate) fn test_positive_test(source: String, expected: &str) {
+    let writer = vec![];
+    let mut interpreter = Interpreter::from_source(source, writer).unwrap();
+    interpreter.evaluate_program().unwrap();
+    assert_eq!(std::str::from_utf8(interpreter.writer()).unwrap(), expected);
+}
 #[test]
 fn it_works() {
     let src = "5;".to_string();

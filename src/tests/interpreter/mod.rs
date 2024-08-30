@@ -12,3 +12,6 @@ mod while_tests;
 
 #[cfg(test)]
 mod function;
+
+#[cfg(test)]
+mod closure;

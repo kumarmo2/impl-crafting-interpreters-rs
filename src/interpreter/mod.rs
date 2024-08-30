@@ -23,10 +23,17 @@ pub(crate) enum Object {
     Number(f64),
     Boolean(bool),
     String(Bytes),
-    Function(Rc<FunctionExpression>),
+    Function(Function),
     NativeFunction(Rc<dyn Fn(Option<Box<dyn Iterator<Item = Object>>>) -> Object>),
     Nil,
 }
+
+#[derive(Clone)]
+struct Function {
+    fe: Rc<FunctionExpression>,
+    env: Env,
+}
+
 impl std::fmt::Debug for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -37,7 +44,7 @@ impl std::fmt::Debug for Object {
                 let str = unsafe { std::str::from_utf8_unchecked(bytes.as_ref()) };
                 write!(f, "{}", str)
             }
-            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
+            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.fe.as_ref()),
             Object::NativeFunction(_) => write!(f, "<native fn>"),
         }
     }
@@ -66,7 +73,7 @@ impl std::fmt::Display for Object {
                 let str = unsafe { std::str::from_utf8_unchecked(bytes.as_ref()) };
                 write!(f, "{}", str)
             }
-            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
+            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.fe.as_ref()),
             Object::NativeFunction(_) => write!(f, "<native fn>"),
         }
     }
@@ -440,7 +447,10 @@ where
         call_expr: &CallExpression,
         env: Env,
     ) -> Result<Object, EvaluationError> {
-        let func_expr = match self.evaluate_expression(call_expr.callee.as_ref(), env.clone())? {
+        let Function {
+            fe: func_expr,
+            env: captured_env,
+        } = match self.evaluate_expression(call_expr.callee.as_ref(), env.clone())? {
             Object::Function(fe) => fe,
             Object::NativeFunction(nfe) => return self.evaluate_native_function_call(nfe),
             expr => {
@@ -467,7 +477,7 @@ where
                 "Expected {parameter_count} arguments but got {arguments_count}."
             )));
         }
-        let child_env = Rc::new(RefCell::new(Environment::with_parent(env.clone())));
+        let child_env = Rc::new(RefCell::new(Environment::with_parent(captured_env.clone())));
         if arguments_count != 0 {
             let mut parameters = func_expr.parameters.as_ref().unwrap().iter();
             let mut arguments = call_expr.arguments.as_ref().unwrap().iter();
@@ -502,12 +512,19 @@ where
         if let Some(name_token) = fe.as_ref().name.as_ref() {
             if let Some(name_bytes) = name_token.get_bytes() {
                 // add in the environment.
-                env.as_ref()
-                    .borrow_mut()
-                    .add(name_bytes.clone(), Object::Function(fe.clone()));
+                env.as_ref().borrow_mut().add(
+                    name_bytes.clone(),
+                    Object::Function(Function {
+                        fe: fe.clone(),
+                        env: env.clone(),
+                    }),
+                );
             }
         }
-        Ok(Object::Function(fe))
+        Ok(Object::Function(Function {
+            fe: fe,
+            env: env.clone(),
+        }))
     }
 
     pub(crate) fn evaluate(&mut self) -> Result<Object, EvaluationError> {
