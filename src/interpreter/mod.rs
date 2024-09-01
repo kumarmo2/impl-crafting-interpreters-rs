@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
+use std::{borrow::Borrow, cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
 pub(crate) mod native;
@@ -13,6 +13,7 @@ use crate::{
         },
         ParseError, Parser,
     },
+    symantic_analysis::{ResolutionError, Resolver},
     token::Token,
     Void,
 };
@@ -30,7 +31,7 @@ pub(crate) enum Object {
 
 #[derive(Clone)]
 pub(crate) struct Function {
-    fe: Rc<FunctionExpression>,
+    fe: Rc<RefCell<FunctionExpression>>,
     env: Env,
 }
 
@@ -44,7 +45,7 @@ impl std::fmt::Debug for Object {
                 let str = unsafe { std::str::from_utf8_unchecked(bytes.as_ref()) };
                 write!(f, "{}", str)
             }
-            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.fe.as_ref()),
+            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.fe.as_ref().borrow()),
             Object::NativeFunction(_) => write!(f, "<native fn>"),
         }
     }
@@ -73,7 +74,7 @@ impl std::fmt::Display for Object {
                 let str = unsafe { std::str::from_utf8_unchecked(bytes.as_ref()) };
                 write!(f, "{}", str)
             }
-            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.fe.as_ref()),
+            Object::Function(fe) => write!(f, "{fe:?}", fe = fe.fe.as_ref().borrow()),
             Object::NativeFunction(_) => write!(f, "<native fn>"),
         }
     }
@@ -142,6 +143,7 @@ where
 
 pub(crate) enum EvaluationError {
     ParseError(ParseError),
+    ResolutionError(ResolutionError),
     ExpectedSomethingButGotOther {
         expected: &'static str,
         got: Object,
@@ -177,6 +179,7 @@ impl std::fmt::Debug for EvaluationError {
                 let ident = unsafe { std::str::from_utf8_unchecked(identifier) };
                 write!(f, "undefined variable '{ident}'")
             }
+            EvaluationError::ResolutionError(e) => write!(f, "{:?}", e),
         }
     }
 }
@@ -471,6 +474,7 @@ where
 
         let mut parameter_count = func_expr
             .as_ref()
+            .borrow()
             .parameters
             .as_ref()
             .and_then(|args| Some(args.len()))
@@ -483,7 +487,8 @@ where
         }
         let child_env = Rc::new(RefCell::new(Environment::with_parent(captured_env.clone())));
         if arguments_count != 0 {
-            let mut parameters = func_expr.parameters.as_ref().unwrap().iter();
+            let borrowed = func_expr.as_ref().borrow();
+            let mut parameters = borrowed.parameters.as_ref().unwrap().iter();
             let mut arguments = call_expr.arguments.as_ref().unwrap().iter();
             while parameter_count > 0 {
                 let parameter = parameters.next().unwrap();
@@ -498,7 +503,7 @@ where
                 parameter_count -= 1;
             }
         }
-        for (index, stmt) in func_expr.body.iter().enumerate() {
+        for (index, stmt) in func_expr.as_ref().borrow().body.iter().enumerate() {
             if let Right(val) = self.evaluate_stmt(stmt, child_env.clone())? {
                 return Ok(val);
             }
@@ -510,10 +515,10 @@ where
 
     fn evaluate_funtion_expression(
         &self,
-        fe: Rc<FunctionExpression>,
+        fe: Rc<RefCell<FunctionExpression>>,
         env: Env,
     ) -> Result<Object, EvaluationError> {
-        if let Some(name_token) = fe.as_ref().name.as_ref() {
+        if let Some(name_token) = fe.as_ref().borrow().name.as_ref() {
             if let Some(name_bytes) = name_token.get_bytes() {
                 // add in the environment.
                 env.as_ref().borrow_mut().add(
@@ -637,10 +642,13 @@ where
     }
 
     pub(crate) fn evaluate_program(&mut self) -> Result<(), EvaluationError> {
-        let statements = self
+        let mut statements = self
             .parser
             .parse_program()
             .or_else(|e| Err(EvaluationError::ParseError(e)))?;
+
+        let mut resolver = Resolver::new();
+        resolver.resolve(statements.iter_mut());
 
         let global_env = Rc::new(RefCell::new(Environment::default()));
         use native::clock;

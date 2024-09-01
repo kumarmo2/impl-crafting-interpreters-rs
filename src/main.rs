@@ -125,7 +125,7 @@ fn main() {
                 println!("{:?}", statement);
             }
         }
-        "evaluate-program" => {
+        "run" => {
             let source = read_contents();
             let mut interpreter = match Interpreter::from_source(source, std::io::stdout()) {
                 Ok(i) => i,

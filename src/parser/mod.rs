@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use expression::{
     CallExpression, Expression, FunctionExpression, IdentExpression, IfStatement, Precedence,
@@ -269,11 +269,13 @@ impl Parser {
         } else {
             unreachable!();
         };
-        Ok(Expression::Function(Rc::new(FunctionExpression {
-            body: stmts,
-            parameters: params,
-            name,
-        })))
+        Ok(Expression::Function(Rc::new(RefCell::new(
+            FunctionExpression {
+                body: stmts,
+                parameters: params,
+                name,
+            },
+        ))))
     }
 
     #[allow(unused_variables)]

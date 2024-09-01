@@ -1,4 +1,4 @@
-use std::{ops::Deref, rc::Rc};
+use std::{borrow::Borrow, cell::RefCell, ops::Deref, rc::Rc};
 
 use bytes::Bytes;
 
@@ -38,7 +38,7 @@ pub(crate) enum Expression {
         left_expr: Box<Expression>,
         right_expr: Box<Expression>,
     },
-    Function(Rc<FunctionExpression>),
+    Function(Rc<RefCell<FunctionExpression>>),
     Call(CallExpression),
 }
 pub(crate) struct CallExpression {
@@ -94,7 +94,7 @@ impl std::fmt::Debug for Expression {
                 std::str::from_utf8_unchecked(ident_bytes.as_ref())
             }),
             Expression::Print(e) => write!(f, "print {:?}", e.as_ref()),
-            Expression::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
+            Expression::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref().borrow()),
             Expression::Call(CallExpression { callee, arguments }) => {
                 write!(f, "{callee:?}(", callee = callee.as_ref())?;
                 if let Some(args) = arguments {
@@ -190,7 +190,7 @@ impl std::fmt::Debug for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Statement::Expression(e) => match e {
-                Expression::Function(_) => write!(f, "{e:?}"),
+                Expression::Function(fe) => write!(f, "{x:?}", x = fe.as_ref().borrow()),
                 _ => write!(f, "{:?};", e),
             },
 
