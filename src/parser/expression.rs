@@ -1,9 +1,21 @@
-use std::rc::Rc;
+use std::{ops::Deref, rc::Rc};
 
 use bytes::Bytes;
 
 use crate::token::Token;
 
+pub(crate) struct IdentExpression {
+    pub(crate) name: Bytes,
+    pub(crate) resolve_hops: Option<usize>,
+}
+
+impl Deref for IdentExpression {
+    type Target = Bytes;
+
+    fn deref(&self) -> &Self::Target {
+        &self.name
+    }
+}
 pub(crate) enum Expression {
     NilLiteral,
     // NOTE: I had to add the "Print" expression because of majorly one reason.
@@ -15,7 +27,7 @@ pub(crate) enum Expression {
     BooleanLiteral(bool),
     NumberLiteral(f64),
     StringLiteral(Bytes),
-    Ident(Bytes),
+    Ident(IdentExpression),
     GroupedExpression(Box<Expression>),
     PrefixExpression {
         operator: Token,
@@ -35,6 +47,7 @@ pub(crate) struct CallExpression {
 }
 
 pub(crate) struct FunctionExpression {
+    // TODO: we need to add the resolve hops.
     pub(crate) name: Option<Token>,
     pub(crate) parameters: Option<Vec<Token>>,
     pub(crate) body: Vec<Statement>,

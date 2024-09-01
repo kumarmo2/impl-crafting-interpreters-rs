@@ -8,8 +8,8 @@ pub(crate) mod native;
 use crate::{
     parser::{
         expression::{
-            CallExpression, Expression, FunctionExpression, IfStatement, Precedence, Statement,
-            VarDeclaration, WhileLoop,
+            CallExpression, Expression, FunctionExpression, IdentExpression, IfStatement,
+            Precedence, Statement, VarDeclaration, WhileLoop,
         },
         ParseError, Parser,
     },
@@ -305,7 +305,9 @@ where
         right_expr: &Expression,
         env: Env,
     ) -> Result<Object, EvaluationError> {
-        let ident_bytes = match left_expr {
+        let IdentExpression {
+            name: ident_bytes, ..
+        } = match left_expr {
             Expression::Ident(ident_bytes) => ident_bytes,
             expr => {
                 return Err(EvaluationError::Runtime(format!(
@@ -397,7 +399,9 @@ where
     ) -> Result<Object, EvaluationError> {
         let val = match expression {
             Expression::NilLiteral => Object::Nil,
-            Expression::Ident(ident_bytes) => {
+            Expression::Ident(IdentExpression {
+                name: ident_bytes, ..
+            }) => {
                 if !env.as_ref().borrow().is_declared(ident_bytes) {
                     return Err(EvaluationError::UndefinedVariable {
                         identifier: ident_bytes.clone(),

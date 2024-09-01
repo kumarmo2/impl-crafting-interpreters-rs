@@ -1,6 +1,13 @@
-function fib(n) {
-	if (n < 2) return n;
-	return fib(n - 1) + fib(n - 2);
+let a = "outer";
+
+{
+	let a = "i";
+	console.log(a);
 }
 
-console.log(fib(25));
+// function fib(n) {
+// 	if (n < 2) return n;
+// 	return fib(n - 1) + fib(n - 2);
+// }
+//
+// console.log(fib(25));

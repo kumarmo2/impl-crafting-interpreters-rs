@@ -1,0 +1,17 @@
+ 
+var a = "sdfsdf";
+{
+    var a = a;
+    print a;
+}
+
+// var a = "outer";
+// {
+    // fun showA() {
+        // print a;
+    // }
+    // showA();
+    // var a = "inner";
+    // showA();
+// }
+

@@ -3,8 +3,8 @@
 use std::rc::Rc;
 
 use expression::{
-    CallExpression, Expression, FunctionExpression, IfStatement, Precedence, Statement,
-    VarDeclaration, WhileLoop,
+    CallExpression, Expression, FunctionExpression, IdentExpression, IfStatement, Precedence,
+    Statement, VarDeclaration, WhileLoop,
 };
 
 use crate::token::{LexicalError, Scanner, Token, TokenIterator};
@@ -145,7 +145,6 @@ impl Parser {
         })
     }
 
-    #[allow(unused_variables)]
     fn parse_call_expression(&mut self, left_expr: Expression) -> ParseResult<Expression> {
         self.advance_token();
         let mut args: Vec<Expression> = vec![];
@@ -289,7 +288,10 @@ impl Parser {
             Token::StringLiteral(bytes) => Expression::StringLiteral(bytes.clone()),
             Token::LParen => self.parse_prefix_grouped_expression()?,
             Token::MINUS | Token::BANG => self.parse_prefix_operator_expression()?,
-            Token::Identifier(ident_bytes) => Expression::Ident(ident_bytes.clone()),
+            Token::Identifier(ident_bytes) => Expression::Ident(IdentExpression {
+                name: ident_bytes.clone(),
+                resolve_hops: None,
+            }),
             Token::Print => {
                 self.advance_token();
                 let expr = self.parse_expression(precendence.clone())?;

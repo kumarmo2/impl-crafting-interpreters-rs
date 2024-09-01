@@ -9,6 +9,7 @@ use token::Scanner;
 
 pub(crate) mod interpreter;
 pub(crate) mod parser;
+pub(crate) mod symantic_analysis;
 pub(crate) mod token;
 
 #[cfg(test)]
