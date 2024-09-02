@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_variables)]
 
-use std::{borrow::Borrow, cell::RefCell, collections::HashMap, io::Write, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
 pub(crate) mod native;
@@ -13,7 +13,7 @@ use crate::{
         },
         ParseError, Parser,
     },
-    symantic_analysis::{ResolutionError, Resolver},
+    symantic_analysis::resolver::{ResolutionError, Resolver},
     token::Token,
     Void,
 };
@@ -95,6 +95,36 @@ impl Environment {
             parent_env: Some(parent),
         }
     }
+
+    pub(crate) fn get_ancestor_at(&self, hops: usize) -> Result<Env, EvaluationError> {
+        assert_ne!(hops, 0);
+        let parent_env = self.parent_env.clone();
+
+        let mut env = if let Some(env) = parent_env {
+            env
+        } else {
+            return Err(EvaluationError::ResolutionError(
+                ResolutionError::InValidHops,
+            ));
+        };
+
+        let mut curr_hops = 1;
+
+        while curr_hops < hops {
+            let parent_env = env.as_ref().borrow().parent_env.clone();
+            env = if let Some(env) = parent_env {
+                env
+            } else {
+                return Err(EvaluationError::ResolutionError(
+                    ResolutionError::InValidHops,
+                ));
+            };
+            curr_hops += 1;
+        }
+
+        Ok(env.clone())
+    }
+
     pub(crate) fn add(&mut self, key: Bytes, val: Object) -> Option<Object> {
         self.values.insert(key, val)
     }
@@ -102,11 +132,15 @@ impl Environment {
     pub(crate) fn assign(&mut self, key: Bytes, val: Object) -> Option<Object> {
         if self.values.contains_key(key.as_ref()) {
             return self.values.insert(key, val);
+        } else {
+            let key = unsafe { std::str::from_utf8_unchecked(key.as_ref()) };
+            panic!(
+                "key: {key} lookup error: this should not be called. during assignment, the environment must be resolved"
+            );
         }
-        if let Some(parent_env) = self.parent_env.as_ref() {
-            return parent_env.clone().as_ref().borrow_mut().assign(key, val);
-        }
-        unreachable!()
+        // if let Some(parent_env) = self.parent_env.as_ref() {
+        //     return parent_env.clone().as_ref().borrow_mut().assign(key, val);
+        // }
     }
 
     pub(crate) fn get<K: AsRef<[u8]>>(&self, key: K) -> Object {
@@ -139,15 +173,12 @@ where
 {
     writer: W,
     parser: Parser,
+    global_env: Env,
 }
 
 pub(crate) enum EvaluationError {
     ParseError(ParseError),
     ResolutionError(ResolutionError),
-    ExpectedSomethingButGotOther {
-        expected: &'static str,
-        got: Object,
-    },
     Runtime(String),
     InvalidOperation {
         left: Object,
@@ -163,9 +194,6 @@ impl std::fmt::Debug for EvaluationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EvaluationError::ParseError(e) => write!(f, "{:?}", e),
-            EvaluationError::ExpectedSomethingButGotOther { expected, got } => {
-                write!(f, "expected: {expected}, but got: {got}")
-            }
             EvaluationError::InvalidOperation {
                 left,
                 operator,
@@ -206,7 +234,7 @@ fn evaluate_string_infix_operation(
             let right = unsafe { std::str::from_utf8_unchecked(right.as_ref()) };
             Ok(Object::Boolean(left != right))
         }
-        token => Err(EvaluationError::InvalidOperation {
+        _token => Err(EvaluationError::InvalidOperation {
             left: Object::String(left.clone()),
             operator,
             right: Object::String(right.clone()),
@@ -271,7 +299,7 @@ where
         Ok(Self {
             writer,
             parser,
-            // global_env: Environment::default(),
+            global_env: Rc::new(RefCell::new(Environment::default())),
         })
     }
 
@@ -309,7 +337,8 @@ where
         env: Env,
     ) -> Result<Object, EvaluationError> {
         let IdentExpression {
-            name: ident_bytes, ..
+            name: ident_bytes,
+            resolve_hops: hops,
         } = match left_expr {
             Expression::Ident(ident_bytes) => ident_bytes,
             expr => {
@@ -319,6 +348,9 @@ where
             }
         };
         let value = self.evaluate_expression(right_expr, env.clone())?;
+
+        let env = self.lookup(env.clone(), hops.as_ref())?;
+
         if !env.as_ref().borrow().is_declared(ident_bytes.as_ref()) {
             return Err(EvaluationError::UndefinedVariable {
                 identifier: ident_bytes.clone(),
@@ -358,7 +390,7 @@ where
             (Object::Boolean(left), Object::Boolean(right)) => match operator.clone() {
                 Token::EQUALEQUAL => Ok(Object::Boolean(*left == *right)),
                 Token::BANGEQUAL => Ok(Object::Boolean(*left != *right)),
-                token => Err(EvaluationError::InvalidOperation {
+                _token => Err(EvaluationError::InvalidOperation {
                     left: left_value,
                     operator: operator.clone(),
                     right: right_value,
@@ -383,7 +415,7 @@ where
             Token::BANG => Object::Boolean(!value.get_truthy_value()),
             Token::MINUS => match value {
                 Object::Number(v) => Object::Number(-v),
-                object => {
+                _object => {
                     return Err(EvaluationError::Runtime(format!(
                         "Error: Operand must be a number.\n[line {}]",
                         self.parser.get_curr_line()
@@ -395,6 +427,26 @@ where
         Ok(object)
     }
 
+    fn lookup(&self, curr_env: Env, hops: Option<&usize>) -> Result<Env, EvaluationError> {
+        let hops = match hops {
+            None => return Ok(self.global_env.clone()),
+            Some(hops) => *hops,
+        };
+        // println!("looking up: {hops}");
+        if hops == 0 {
+            return Ok(curr_env);
+        }
+        curr_env
+            .as_ref()
+            .borrow()
+            .get_ancestor_at(hops)
+            .or_else(|e| {
+                println!(" got error while looking up for the ancestor, {e:?}");
+
+                Ok(curr_env.clone())
+            })
+    }
+
     fn evaluate_expression(
         &mut self,
         expression: &Expression,
@@ -403,14 +455,17 @@ where
         let val = match expression {
             Expression::NilLiteral => Object::Nil,
             Expression::Ident(IdentExpression {
-                name: ident_bytes, ..
+                name: ident_bytes,
+                resolve_hops: hops,
             }) => {
-                if !env.as_ref().borrow().is_declared(ident_bytes) {
+                let env = self.lookup(env, hops.as_ref())?;
+                let borrowed = env.as_ref().borrow();
+                if !borrowed.is_declared(ident_bytes) {
                     return Err(EvaluationError::UndefinedVariable {
                         identifier: ident_bytes.clone(),
                     });
                 }
-                env.as_ref().borrow().get(ident_bytes)
+                borrowed.get(ident_bytes)
             }
             Expression::BooleanLiteral(v) => Object::Boolean(*v),
             Expression::NumberLiteral(v) => Object::Number(*v),
@@ -460,7 +515,7 @@ where
         } = match self.evaluate_expression(call_expr.callee.as_ref(), env.clone())? {
             Object::Function(fe) => fe,
             Object::NativeFunction(nfe) => return self.evaluate_native_function_call(nfe),
-            expr => {
+            _ => {
                 return Err(EvaluationError::Runtime(format!(
                     "Callee must be a function"
                 )))
@@ -503,7 +558,7 @@ where
                 parameter_count -= 1;
             }
         }
-        for (index, stmt) in func_expr.as_ref().borrow().body.iter().enumerate() {
+        for stmt in func_expr.as_ref().borrow().body.iter() {
             if let Right(val) = self.evaluate_stmt(stmt, child_env.clone())? {
                 return Ok(val);
             }
@@ -647,18 +702,20 @@ where
             .parse_program()
             .or_else(|e| Err(EvaluationError::ParseError(e)))?;
 
-        let mut resolver = Resolver::new();
-        resolver.resolve(statements.iter_mut());
+        let resolver = Resolver::new();
+        resolver
+            .resolve(statements.iter_mut())
+            .or_else(|e| Err(EvaluationError::ResolutionError(e)))?;
 
-        let global_env = Rc::new(RefCell::new(Environment::default()));
         use native::clock;
-        global_env.as_ref().borrow_mut().add(
+        self.global_env.as_ref().borrow_mut().add(
             b"clock".as_ref().into(),
             Object::NativeFunction(Rc::new(clock)),
         );
+        let env = self.global_env.clone();
 
         for stmt in statements.iter() {
-            match self.evaluate_stmt(stmt, global_env.clone())? {
+            match self.evaluate_stmt(stmt, env.clone())? {
                 Either::Left(_) => (),
                 Either::Right(_) => {
                     return Err(EvaluationError::Runtime(format!(
