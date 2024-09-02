@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, cell::RefCell, ops::Deref, rc::Rc};
+use std::{cell::RefCell, ops::Deref, rc::Rc};
 
 use bytes::Bytes;
 
@@ -157,7 +157,6 @@ pub(crate) enum Statement {
     Expression(Expression),
     Print(Expression),
     VarDeclaration(VarDeclaration),
-    // Assignment(Assignment),
     Block(Vec<Statement>),
     IfStatement(Box<IfStatement>),
     WhileLoop(WhileLoop),

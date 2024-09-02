@@ -138,9 +138,6 @@ impl Environment {
                 "key: {key} lookup error: this should not be called. during assignment, the environment must be resolved"
             );
         }
-        // if let Some(parent_env) = self.parent_env.as_ref() {
-        //     return parent_env.clone().as_ref().borrow_mut().assign(key, val);
-        // }
     }
 
     pub(crate) fn get<K: AsRef<[u8]>>(&self, key: K) -> Object {
@@ -150,18 +147,12 @@ impl Environment {
                 .get(key.as_ref())
                 .map_or(Object::Nil, |v| v.clone());
         }
-        if let Some(parent_env) = &self.parent_env {
-            return parent_env.as_ref().borrow().get(key.as_ref());
-        }
         Object::Nil
     }
 
     pub(crate) fn is_declared<K: AsRef<[u8]>>(&self, key: K) -> bool {
         if self.values.contains_key(key.as_ref()) {
             return true;
-        }
-        if let Some(parent_env) = &self.parent_env {
-            return parent_env.as_ref().borrow().is_declared(key);
         }
         false
     }
@@ -188,6 +179,7 @@ pub(crate) enum EvaluationError {
     UndefinedVariable {
         identifier: Bytes,
     },
+    AlreadyDeclaredVariable(Bytes),
 }
 
 impl std::fmt::Debug for EvaluationError {
@@ -208,9 +200,17 @@ impl std::fmt::Debug for EvaluationError {
                 write!(f, "undefined variable '{ident}'")
             }
             EvaluationError::ResolutionError(e) => write!(f, "{:?}", e),
+            EvaluationError::AlreadyDeclaredVariable(ident_bytes) => {
+                let ident = unsafe { std::str::from_utf8_unchecked(ident_bytes) };
+                write!(
+                    f,
+                    "Error at '{ident}': Already a variable with this name in this scope."
+                )
+            }
         }
     }
 }
+
 fn evaluate_string_infix_operation(
     operator: Token,
     left: &Bytes,
@@ -432,7 +432,6 @@ where
             None => return Ok(self.global_env.clone()),
             Some(hops) => *hops,
         };
-        // println!("looking up: {hops}");
         if hops == 0 {
             return Ok(curr_env);
         }
@@ -615,6 +614,9 @@ where
                 let _ = writeln!(self.writer, "{}", val);
             }
             Statement::VarDeclaration(VarDeclaration { identifier, expr }) => {
+                if env.as_ref().borrow().is_declared(identifier.as_ref()) {
+                    return Err(EvaluationError::AlreadyDeclaredVariable(identifier.clone()));
+                }
                 if let Some(expr) = expr {
                     let val = self.evaluate_expression(expr, env.clone())?;
                     env.as_ref().borrow_mut().add(identifier.clone(), val);

@@ -14,6 +14,7 @@ use crate::{
 
 pub(crate) enum ResolutionError {
     ReferenceAVariableInItsInitializer(Bytes),
+    AlreadyDeclaredVariable(Bytes),
     InValidHops,
 }
 
@@ -28,6 +29,13 @@ impl std::fmt::Debug for ResolutionError {
                 )
             }
             ResolutionError::InValidHops => write!(f, "Invalid hops found for resolution"),
+            ResolutionError::AlreadyDeclaredVariable(ident_bytes) => {
+                let ident = unsafe { std::str::from_utf8_unchecked(ident_bytes) };
+                write!(
+                    f,
+                    "Error at '{ident}': Already a variable with this name in this scope."
+                )
+            }
         }
     }
 }
@@ -157,13 +165,12 @@ impl Resolver {
         match self.scopes.last_mut() {
             None => Ok(()),
             Some(scope) => {
+                if scope.contains_key(&ident_bytes) {
+                    return Err(ResolutionError::AlreadyDeclaredVariable(ident_bytes));
+                }
                 scope.insert(ident_bytes, false);
                 Ok(())
-            } // None => Ok(()),
-              // Some(true) => Ok(()),
-              // Some(false) => Err(ResolutionError::ReferenceAVariableInItsInitializer(
-              //     ident_bytes.clone(),
-              // )),
+            }
         }
     }
 
