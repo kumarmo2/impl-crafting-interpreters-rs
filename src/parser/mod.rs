@@ -393,7 +393,7 @@ impl Parser {
             Token::Identifier(iden_bytes) => iden_bytes,
             token => {
                 return Err(ParseError::ExpectedTokenNotFound {
-                    expected: "Identifier",
+                    expected: "variable name.",
                     got: token,
                     line: self.get_curr_line(),
                 })

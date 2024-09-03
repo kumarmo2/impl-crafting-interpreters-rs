@@ -179,7 +179,6 @@ pub(crate) enum EvaluationError {
     UndefinedVariable {
         identifier: Bytes,
     },
-    AlreadyDeclaredVariable(Bytes),
 }
 
 impl std::fmt::Debug for EvaluationError {
@@ -200,13 +199,6 @@ impl std::fmt::Debug for EvaluationError {
                 write!(f, "undefined variable '{ident}'")
             }
             EvaluationError::ResolutionError(e) => write!(f, "{:?}", e),
-            EvaluationError::AlreadyDeclaredVariable(ident_bytes) => {
-                let ident = unsafe { std::str::from_utf8_unchecked(ident_bytes) };
-                write!(
-                    f,
-                    "Error at '{ident}': Already a variable with this name in this scope."
-                )
-            }
         }
     }
 }
@@ -614,9 +606,6 @@ where
                 let _ = writeln!(self.writer, "{}", val);
             }
             Statement::VarDeclaration(VarDeclaration { identifier, expr }) => {
-                if env.as_ref().borrow().is_declared(identifier.as_ref()) {
-                    return Err(EvaluationError::AlreadyDeclaredVariable(identifier.clone()));
-                }
                 if let Some(expr) = expr {
                     let val = self.evaluate_expression(expr, env.clone())?;
                     env.as_ref().borrow_mut().add(identifier.clone(), val);
