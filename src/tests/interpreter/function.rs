@@ -15,8 +15,15 @@ fn empty_body() {
 #[test]
 fn local_mutual_recursion() {
     let source = include_str!("../../../lox-test/function/local_mutual_recursion.lox").to_string();
-    let expected = "true\nfalse\nfalse\ntrue\n";
-    test_positive_test(source, expected);
+    let writer = vec![];
+    let mut interpreter = Interpreter::from_source(source, writer).unwrap();
+    match interpreter.evaluate_program() {
+        Ok(_) => panic!("error was expected"),
+        Err(e) => match e {
+            EvaluationError::UndefinedVariable { .. } => (),
+            e => panic!("expected UndefinedVariable, got {e:?}"),
+        },
+    }
 }
 
 #[test]

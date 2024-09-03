@@ -9,6 +9,7 @@ use token::Scanner;
 
 pub(crate) mod interpreter;
 pub(crate) mod parser;
+pub(crate) mod symantic_analysis;
 pub(crate) mod token;
 
 #[cfg(test)]
@@ -124,7 +125,7 @@ fn main() {
                 println!("{:?}", statement);
             }
         }
-        "evaluate-program" => {
+        "run" => {
             let source = read_contents();
             let mut interpreter = match Interpreter::from_source(source, std::io::stdout()) {
                 Ok(i) => i,

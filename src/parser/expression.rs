@@ -1,9 +1,21 @@
-use std::rc::Rc;
+use std::{cell::RefCell, ops::Deref, rc::Rc};
 
 use bytes::Bytes;
 
 use crate::token::Token;
 
+pub(crate) struct IdentExpression {
+    pub(crate) name: Bytes,
+    pub(crate) resolve_hops: Option<usize>,
+}
+
+impl Deref for IdentExpression {
+    type Target = Bytes;
+
+    fn deref(&self) -> &Self::Target {
+        &self.name
+    }
+}
 pub(crate) enum Expression {
     NilLiteral,
     // NOTE: I had to add the "Print" expression because of majorly one reason.
@@ -15,7 +27,7 @@ pub(crate) enum Expression {
     BooleanLiteral(bool),
     NumberLiteral(f64),
     StringLiteral(Bytes),
-    Ident(Bytes),
+    Ident(IdentExpression),
     GroupedExpression(Box<Expression>),
     PrefixExpression {
         operator: Token,
@@ -26,7 +38,7 @@ pub(crate) enum Expression {
         left_expr: Box<Expression>,
         right_expr: Box<Expression>,
     },
-    Function(Rc<FunctionExpression>),
+    Function(Rc<RefCell<FunctionExpression>>),
     Call(CallExpression),
 }
 pub(crate) struct CallExpression {
@@ -35,6 +47,7 @@ pub(crate) struct CallExpression {
 }
 
 pub(crate) struct FunctionExpression {
+    // TODO: we need to add the resolve hops.
     pub(crate) name: Option<Token>,
     pub(crate) parameters: Option<Vec<Token>>,
     pub(crate) body: Vec<Statement>,
@@ -81,7 +94,7 @@ impl std::fmt::Debug for Expression {
                 std::str::from_utf8_unchecked(ident_bytes.as_ref())
             }),
             Expression::Print(e) => write!(f, "print {:?}", e.as_ref()),
-            Expression::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref()),
+            Expression::Function(fe) => write!(f, "{fe:?}", fe = fe.as_ref().borrow()),
             Expression::Call(CallExpression { callee, arguments }) => {
                 write!(f, "{callee:?}(", callee = callee.as_ref())?;
                 if let Some(args) = arguments {
@@ -144,7 +157,6 @@ pub(crate) enum Statement {
     Expression(Expression),
     Print(Expression),
     VarDeclaration(VarDeclaration),
-    // Assignment(Assignment),
     Block(Vec<Statement>),
     IfStatement(Box<IfStatement>),
     WhileLoop(WhileLoop),
@@ -177,7 +189,7 @@ impl std::fmt::Debug for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Statement::Expression(e) => match e {
-                Expression::Function(_) => write!(f, "{e:?}"),
+                Expression::Function(fe) => write!(f, "{x:?}", x = fe.as_ref().borrow()),
                 _ => write!(f, "{:?};", e),
             },
 

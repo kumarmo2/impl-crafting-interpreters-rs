@@ -1,10 +1,8 @@
-#![allow(dead_code)]
-
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use expression::{
-    CallExpression, Expression, FunctionExpression, IfStatement, Precedence, Statement,
-    VarDeclaration, WhileLoop,
+    CallExpression, Expression, FunctionExpression, IdentExpression, IfStatement, Precedence,
+    Statement, VarDeclaration, WhileLoop,
 };
 
 use crate::token::{LexicalError, Scanner, Token, TokenIterator};
@@ -19,7 +17,6 @@ pub(crate) struct Parser {
 
 pub(crate) enum ParseError {
     EmptySource,
-    ImpossibleError,
     LexicalError(LexicalError),
     ExpectedTokenNotFound {
         expected: &'static str,
@@ -37,7 +34,6 @@ impl std::fmt::Debug for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParseError::EmptySource => write!(f, "EmptySource"),
-            ParseError::ImpossibleError => write!(f, "ImpossibleError"),
             ParseError::LexicalError(e) => write!(f, "{:?}", e),
             ParseError::ExpectedTokenNotFound {
                 line,
@@ -145,7 +141,6 @@ impl Parser {
         })
     }
 
-    #[allow(unused_variables)]
     fn parse_call_expression(&mut self, left_expr: Expression) -> ParseResult<Expression> {
         self.advance_token();
         let mut args: Vec<Expression> = vec![];
@@ -270,11 +265,13 @@ impl Parser {
         } else {
             unreachable!();
         };
-        Ok(Expression::Function(Rc::new(FunctionExpression {
-            body: stmts,
-            parameters: params,
-            name,
-        })))
+        Ok(Expression::Function(Rc::new(RefCell::new(
+            FunctionExpression {
+                body: stmts,
+                parameters: params,
+                name,
+            },
+        ))))
     }
 
     #[allow(unused_variables)]
@@ -289,7 +286,10 @@ impl Parser {
             Token::StringLiteral(bytes) => Expression::StringLiteral(bytes.clone()),
             Token::LParen => self.parse_prefix_grouped_expression()?,
             Token::MINUS | Token::BANG => self.parse_prefix_operator_expression()?,
-            Token::Identifier(ident_bytes) => Expression::Ident(ident_bytes.clone()),
+            Token::Identifier(ident_bytes) => Expression::Ident(IdentExpression {
+                name: ident_bytes.clone(),
+                resolve_hops: None,
+            }),
             Token::Print => {
                 self.advance_token();
                 let expr = self.parse_expression(precendence.clone())?;
@@ -389,7 +389,7 @@ impl Parser {
             Token::Identifier(iden_bytes) => iden_bytes,
             token => {
                 return Err(ParseError::ExpectedTokenNotFound {
-                    expected: "Identifier",
+                    expected: "variable name.",
                     got: token,
                     line: self.get_curr_line(),
                 })
@@ -523,7 +523,6 @@ impl Parser {
 
     fn parse_single_statement(&mut self) -> Result<Statement, ParseError> {
         let stmt = self.parse_single_statement_without_semicolon()?;
-        // println!("{stmt:?}");
         match &stmt {
             Statement::IfStatement(_) | Statement::WhileLoop(_) | Statement::Block(_) => {
                 return Ok(stmt)

@@ -15,3 +15,6 @@ mod function;
 
 #[cfg(test)]
 mod closure;
+
+#[cfg(test)]
+mod variable;
