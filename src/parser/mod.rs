@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{cell::RefCell, rc::Rc};
 
 use expression::{
@@ -19,7 +17,6 @@ pub(crate) struct Parser {
 
 pub(crate) enum ParseError {
     EmptySource,
-    ImpossibleError,
     LexicalError(LexicalError),
     ExpectedTokenNotFound {
         expected: &'static str,
@@ -37,7 +34,6 @@ impl std::fmt::Debug for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParseError::EmptySource => write!(f, "EmptySource"),
-            ParseError::ImpossibleError => write!(f, "ImpossibleError"),
             ParseError::LexicalError(e) => write!(f, "{:?}", e),
             ParseError::ExpectedTokenNotFound {
                 line,

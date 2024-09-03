@@ -1,5 +1,3 @@
-#![allow(dead_code, unused_variables)]
-
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use bytes::{BufMut, Bytes, BytesMut};
@@ -683,6 +681,7 @@ where
         Ok(Either::Left(Void))
     }
 
+    #[allow(dead_code)] // this function is being used from the test.
     pub(crate) fn writer(&self) -> &W {
         &self.writer
     }

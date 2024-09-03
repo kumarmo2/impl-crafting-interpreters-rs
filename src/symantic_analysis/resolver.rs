@@ -1,5 +1,3 @@
-#![allow(dead_code, unused_variables, unused_mut)]
-
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use bytes::Bytes;
@@ -56,11 +54,9 @@ impl Resolver {
             if scope.contains_key(ident_expr.name.as_ref()) {
                 match ident_expr.resolve_hops.as_mut() {
                     None => {
-                        let ident =
-                            unsafe { std::str::from_utf8_unchecked(ident_expr.name.as_ref()) };
                         ident_expr.resolve_hops = Some(rev_index);
                     }
-                    Some(t) => {
+                    Some(_) => {
                         let name =
                             unsafe { std::str::from_utf8_unchecked(ident_expr.name.as_ref()) };
                         unreachable!(
@@ -85,7 +81,7 @@ impl Resolver {
                     self.declare_var(ident_bytes.clone())?;
                     self.define_var(ident_bytes.clone());
                 }
-                token => unreachable!("name token must be an identifier"),
+                _ => unreachable!("name token must be an identifier"),
             }
         }
 
@@ -97,7 +93,7 @@ impl Resolver {
                         self.declare_var(ident_bytes.clone())?;
                         self.define_var(ident_bytes.clone());
                     }
-                    t => unreachable!("function parameters must be identifier tokens"),
+                    _ => unreachable!("function parameters must be identifier tokens"),
                 }
             }
         }
@@ -131,9 +127,9 @@ impl Resolver {
             Expression::GroupedExpression(grp_expr) => self.resolve_expr(grp_expr.as_mut())?,
             Expression::PrefixExpression { expr, .. } => self.resolve_expr(expr)?,
             Expression::InfixExpression {
-                operator,
                 left_expr,
                 right_expr,
+                ..
             } => {
                 self.resolve_expr(left_expr)?;
                 self.resolve_expr(right_expr)?;

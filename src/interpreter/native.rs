@@ -1,7 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::Object;
-pub(crate) fn clock(args: Option<Box<dyn Iterator<Item = Object>>>) -> Object {
+pub(crate) fn clock(_args: Option<Box<dyn Iterator<Item = Object>>>) -> Object {
+    // args will be
+    // eventually used to have "native" functions that take parameters.
     let inner_fn = || {
         Object::Number(
             SystemTime::now()
